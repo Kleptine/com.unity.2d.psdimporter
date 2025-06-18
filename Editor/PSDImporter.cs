@@ -10,6 +10,7 @@ using UnityEngine;
 using Unity.Collections;
 using System.Linq;
 using System.Reflection;
+using Unity.Psd;
 using UnityEditor.AssetImporters;
 using UnityEditor.U2D.Common;
 using UnityEditor.U2D.Sprites;
@@ -409,130 +410,137 @@ namespace UnityEditor.U2D.PSD
 
                 importData.documentSize = new Vector2Int(doc.width, doc.height);
 
-                bool singleSpriteMode = m_TextureImporterSettings.textureType == TextureImporterType.Sprite && m_TextureImporterSettings.spriteMode != (int)SpriteImportMode.Multiple;
-                if (m_TextureImporterSettings.textureType != TextureImporterType.Sprite ||
-                    m_MosaicLayers == false || singleSpriteMode)
+                if (m_separateOutLayers)
                 {
-                    importData.textureActualWidth = doc.width;
-                    importData.textureActualHeight = doc.height;
-                    output = ImportFlattenImage(doc, ctx, this);
+                    ImportLayersAsIndividualTextures(ctx, doc);
                 }
                 else
                 {
-                    output = ImportFromLayers(ctx, this);
-                    importData.textureActualWidth = output.textureGenerationOutput.actualTextureWidth;
-                    importData.textureActualHeight = output.textureGenerationOutput.actualTextureHeight;
-                }
+                    bool singleSpriteMode = m_TextureImporterSettings.textureType == TextureImporterType.Sprite && m_TextureImporterSettings.spriteMode != (int)SpriteImportMode.Multiple;
+                    if (m_TextureImporterSettings.textureType != TextureImporterType.Sprite ||
+                        m_MosaicLayers == false || singleSpriteMode)
+                    {
+                        importData.textureActualWidth = doc.width;
+                        importData.textureActualHeight = doc.height;
+                        output = ImportFlattenImage(doc, ctx, this);
+                    }
+                    else
+                    {
+                        output = ImportFromLayers(ctx, this);
+                        importData.textureActualWidth = output.textureGenerationOutput.actualTextureWidth;
+                        importData.textureActualHeight = output.textureGenerationOutput.actualTextureHeight;
+                    }
 
-                importData.SetImportedLayers(output.psdLayers);
-                importData.spriteRects = output.spriteRects;
+                    importData.SetImportedLayers(output.psdLayers);
+                    importData.spriteRects = output.spriteRects;
 
-                Texture2D texture = output.textureGenerationOutput.GetTexture(ctx, this);
-                Sprite[] sprites = output.textureGenerationOutput.GetSprites(ctx, this);
-                Texture2D thumbNail = output.textureGenerationOutput.GetThumbnail(ctx, this);
+                    Texture2D texture = output.textureGenerationOutput.GetTexture(ctx, this);
+                    Sprite[] sprites = output.textureGenerationOutput.GetSprites(ctx, this);
+                    Texture2D thumbNail = output.textureGenerationOutput.GetThumbnail(ctx, this);
 
-                importData.importedTextureWidth = texture?.width ?? importData.textureActualWidth;
-                importData.importedTextureHeight = texture?.height ?? importData.textureActualHeight;
+                    importData.importedTextureWidth = texture?.width ?? importData.textureActualWidth;
+                    importData.importedTextureHeight = texture?.height ?? importData.textureActualHeight;
 
-                if (texture != null && sprites != null)
-                    SetPhysicsOutline(GetDataProvider<ISpritePhysicsOutlineDataProvider>(), sprites, definitionScale, pixelsPerUnit, m_GeneratePhysicsShape);
+                    if (texture != null && sprites != null)
+                        SetPhysicsOutline(GetDataProvider<ISpritePhysicsOutlineDataProvider>(), sprites, definitionScale, pixelsPerUnit, m_GeneratePhysicsShape);
 
-                ProducedAsset producedAsset = new ProducedAsset();
-                producedAsset.texture = texture;
-                producedAsset.thumbNail = thumbNail;
-                producedAsset.sprites = sprites;
-                // Suppressing Obsolete warning, as the asset name containers keep the identifiers of objects imported by old versions.
+                    ProducedAsset producedAsset = new ProducedAsset();
+                    producedAsset.texture = texture;
+                    producedAsset.thumbNail = thumbNail;
+                    producedAsset.sprites = sprites;
+                    // Suppressing Obsolete warning, as the asset name containers keep the identifiers of objects imported by old versions.
 #pragma warning disable 0618
-                producedAsset.textureAssetName = OrDefault(m_TextureAssetName, k_TextureIdentifier);
-                producedAsset.spriteLibAssetName = OrDefault(m_SpriteLibAssetName, k_SpriteLibAssetIdentifier);
+                    producedAsset.textureAssetName = OrDefault(m_TextureAssetName, k_TextureIdentifier);
+                    producedAsset.spriteLibAssetName = OrDefault(m_SpriteLibAssetName, k_SpriteLibAssetIdentifier);
 #pragma warning restore 0618
-                producedAsset.importData = importData;
+                    producedAsset.importData = importData;
 
-                string assetName = System.IO.Path.GetFileNameWithoutExtension(ctx.assetPath);
+                    string assetName = System.IO.Path.GetFileNameWithoutExtension(ctx.assetPath);
 
 #if ENABLE_2D_ANIMATION
-                {
+                    {
 #pragma warning disable 0618
-                    producedAsset.skeletonAssetName = OrDefault(m_SkeletonAssetName, k_SkeletonAssetIdentifier);
+                        producedAsset.skeletonAssetName = OrDefault(m_SkeletonAssetName, k_SkeletonAssetIdentifier);
 #pragma warning restore 0618
 
+                        if (sprites != null)
+                        {
+                            producedAsset.spriteLibraryAsset = ProduceSpriteLibAsset(sprites);
+                            if (producedAsset.spriteLibraryAsset != null)
+                                producedAsset.spriteLibraryAsset.name = assetName;
+                            if (inCharacterMode && skeletonAsset == null)
+                            {
+
+                                SkeletonAsset characterRig = ScriptableObject.CreateInstance<SkeletonAsset>();
+                                characterRig.name = assetName + " Skeleton";
+                                SpriteBone[] bones = GetDataProvider<ICharacterDataProvider>().GetCharacterData().bones;
+                                characterRig.SetSpriteBones(bones);
+                                producedAsset.skeletonAsset = characterRig;
+                            }
+
+                            producedAsset.skeletonAssetReferenceID = m_SkeletonAssetReferenceID;
+                        }
+                    }
+#endif
+
+                    // do this after spritelib since the prefab uses it
+#pragma warning disable 0618
+                    producedAsset.prefabAssetName = OrDefault(m_PrefabAssetName, k_PrefabIdentifier);
                     if (sprites != null)
                     {
-                        producedAsset.spriteLibraryAsset = ProduceSpriteLibAsset(sprites);
-                        if (producedAsset.spriteLibraryAsset != null)
-                            producedAsset.spriteLibraryAsset.name = assetName;
-                        if (inCharacterMode && skeletonAsset == null)
-                        {
-
-                            SkeletonAsset characterRig = ScriptableObject.CreateInstance<SkeletonAsset>();
-                            characterRig.name = assetName + " Skeleton";
-                            SpriteBone[] bones = GetDataProvider<ICharacterDataProvider>().GetCharacterData().bones;
-                            characterRig.SetSpriteBones(bones);
-                            producedAsset.skeletonAsset = characterRig;
-                        }
-
-                        producedAsset.skeletonAssetReferenceID = m_SkeletonAssetReferenceID;
-                    }
-                }
-#endif
-
-                // do this after spritelib since the prefab uses it
-#pragma warning disable 0618
-                producedAsset.prefabAssetName = OrDefault(m_PrefabAssetName, k_PrefabIdentifier);
-                if (sprites != null)
-                {
-                    string prefabRootNameId = OrDefault(m_TextureAssetName, k_PrefabRootIdentifier);
+                        string prefabRootNameId = OrDefault(m_TextureAssetName, k_PrefabRootIdentifier);
 #pragma warning restore 0618
-                    producedAsset.prefabRoot = ((IImportConfigProvider)this).producePrefabMode switch
-                    {
-                        ProducePrefabMode.None => null,
-                        ProducePrefabMode.Prefab => OnProducePrefab(prefabRootNameId, producedAsset, output.psdLayers, (IImportConfigProvider)this, m_GameObjectFactory, m_DocumentAlignment, m_DocumentPivot),
-                        ProducePrefabMode.Paperdoll => OnProducePaperDollPrefab(prefabRootNameId, producedAsset, output.psdLayers, (IImportConfigProvider)this, m_GameObjectFactory),
-                        _ => null
-                    };
-                }
+                        producedAsset.prefabRoot = ((IImportConfigProvider)this).producePrefabMode switch
+                        {
+                            ProducePrefabMode.None => null,
+                            ProducePrefabMode.Prefab => OnProducePrefab(prefabRootNameId, producedAsset, output.psdLayers, (IImportConfigProvider)this, m_GameObjectFactory, m_DocumentAlignment, m_DocumentPivot),
+                            ProducePrefabMode.Paperdoll => OnProducePaperDollPrefab(prefabRootNameId, producedAsset, output.psdLayers, (IImportConfigProvider)this, m_GameObjectFactory),
+                            _ => null
+                        };
+                    }
 
 #if ENABLE_2D_TILEMAP_EDITOR
-                {
-                    if (texture != null && sprites != null && m_GenerateTileAssets)
                     {
-                        List<Sprite> tileSprite = new List<Sprite>();
-                        foreach (Sprite s in sprites)
+                        if (texture != null && sprites != null && m_GenerateTileAssets)
                         {
-                            if (s.rect.width > 4 && s.rect.height > 4)
-                                tileSprite.Add(s);
+                            List<Sprite> tileSprite = new List<Sprite>();
+                            foreach (Sprite s in sprites)
+                            {
+                                if (s.rect.width > 4 && s.rect.height > 4)
+                                    tileSprite.Add(s);
+                            }
+                            GameObject paletteGO = GridPaletteUtility.CreateNewPaletteAsSubAsset(assetName
+                                , m_TilePaletteCellLayout
+                                , m_TilePaletteCellSizing
+                                , m_TilePaletteCellSize
+                                , s_TilePaletteexagonSwizzleTypeValue[m_TilePaletteHexagonLayout]
+                                , m_TransparencySortMode
+                                , m_TransparencySortAxis
+                                , new[] { texture }
+                                , new[] { tileSprite }
+                                , new[] { m_TileTemplate }
+                                , out GridPalette palette
+                                , out List<TileBase> tiles);
+                            producedAsset.tilePaletteGO = paletteGO;
+                            producedAsset.tiles = tiles;
+                            producedAsset.gridPalette = palette;
                         }
-                        GameObject paletteGO = GridPaletteUtility.CreateNewPaletteAsSubAsset(assetName
-                            , m_TilePaletteCellLayout
-                            , m_TilePaletteCellSizing
-                            , m_TilePaletteCellSize
-                            , s_TilePaletteexagonSwizzleTypeValue[m_TilePaletteHexagonLayout]
-                            , m_TransparencySortMode
-                            , m_TransparencySortAxis
-                            , new[] { texture }
-                            , new[] { tileSprite }
-                            , new[] { m_TileTemplate }
-                            , out GridPalette palette
-                            , out List<TileBase> tiles);
-                        producedAsset.tilePaletteGO = paletteGO;
-                        producedAsset.tiles = tiles;
-                        producedAsset.gridPalette = palette;
                     }
-                }
 #endif
 
-                if (!string.IsNullOrEmpty(output.textureGenerationOutput.GetImportInspectorWarnings(ctx, this)))
-                {
-                    Debug.LogWarning(output.textureGenerationOutput.GetImportInspectorWarnings(ctx, this));
-                }
-                string[] importWarnings = output.textureGenerationOutput.GetImportWarnings(ctx, this);
-                if (importWarnings != null && importWarnings.Length != 0)
-                {
-                    foreach (string warning in importWarnings)
-                        Debug.LogWarning(warning);
-                }
+                    if (!string.IsNullOrEmpty(output.textureGenerationOutput.GetImportInspectorWarnings(ctx, this)))
+                    {
+                        Debug.LogWarning(output.textureGenerationOutput.GetImportInspectorWarnings(ctx, this));
+                    }
+                    string[] importWarnings = output.textureGenerationOutput.GetImportWarnings(ctx, this);
+                    if (importWarnings != null && importWarnings.Length != 0)
+                    {
+                        foreach (string warning in importWarnings)
+                            Debug.LogWarning(warning);
+                    }
 
-                RegisterAssets(ctx, producedAsset, Logger);
+                    RegisterAssets(ctx, producedAsset, Logger);
+                }
             }
             catch (Exception e)
             {
@@ -724,6 +732,166 @@ namespace UnityEditor.U2D.PSD
 
             return new PSDImportOutput(output, psdLayers, newSpriteMeta);
         }
+
+        // Imports the file and separates out all layers or groups that are named with OUT_, flattening them.
+        private void ImportLayersAsIndividualTextures(AssetImportContext ctx, Document doc)
+        {
+            // We don't have a main texture in this mode, but we still need a main object.
+            // We can use a simple GameObject as the main asset.
+            var textureSet = ScriptableObject.CreateInstance<TextureSet>();
+            textureSet.DocumentSize = new Vector2(doc.width, doc.height);
+            ctx.AddObjectToAsset("Main", textureSet);
+            ctx.SetMainObject(textureSet);
+
+            // Use a helper to find all layers and groups that match the prefix
+            var layersToExport = FindExportableLayers(m_ExtractData);
+
+            foreach (var layerData in layersToExport)
+            {
+                NativeArray<Color32> imageData = default;
+
+                try
+                {
+                    int width;
+                    int height;
+                    Rectangle rect;
+                    if (layerData.bitmapLayer.IsGroup)
+                    {
+                        // For a group, flatten it into a single image
+                        width = doc.width;
+                        height = doc.height;
+                        rect = GetFlattenedImageBounds(layerData.children, false);
+                        imageData = new NativeArray<Color32>(width * height, Allocator.Persistent);
+                        FlattenImageTask.Execute(layerData.children, ref imageData, true, new Vector2Int(width, height));
+                    }
+                    else
+                    {
+                        // For a single layer, just use its texture data
+                        var layer = layerData.bitmapLayer;
+                        width = layer.Surface.width;
+                        height = layer.Surface.height;
+                        rect = layerData.bitmapLayer.documentRect;
+                        if (layer.Surface.color.IsCreated && layer.Surface.color.Length > 0)
+                        {
+                            imageData = new NativeArray<Color32>(layer.Surface.color, Allocator.Persistent);
+                        }
+                    }
+
+                    if (imageData.IsCreated && imageData.Length > 0)
+                    {
+                        // Use a simplified sprite metadata for texture generation
+                        SpriteMetaData[] spriteMetaData = { new SpriteMetaData { rect = new Rect(0, 0, width, height) } };
+                        
+                        // Generate the texture using the existing pipeline
+                        var textureWrapper = new ImportTextureWrapper(width, height, imageData, spriteMetaData);
+                        Texture2D texture = textureWrapper.GetTexture(ctx, this);
+                        Texture2D thumbNail = textureWrapper.GetThumbnail(ctx, this);
+
+                        if (texture != null)
+                        {
+                            // Add the generated texture as a sub-asset
+                            string assetName = layerData.bitmapLayer.Name.Replace("OUT_", "").Trim();
+                            texture.name = assetName;
+                            
+                            Debug.Log(layerData.bitmapLayer.Name + "  " + doc.width + "   " + rect);
+
+                            textureSet.Textures.Add(new TextureSet.SubTexture()
+                            {
+                                DocumentRect = new Rect(rect.X, rect.Y, rect.Width, rect.Height),
+                                Texture = texture,
+                            });
+                            ctx.AddObjectToAsset(assetName, texture, thumbNail);
+                        }
+                    }
+                }
+                finally
+                {
+                    if(imageData.IsCreated)
+                        imageData.Dispose();
+                }
+            }
+        }
+
+        // Helper method to recursively find layers/groups with the "OUT_" prefix
+        private List<PSDExtractLayerData> FindExportableLayers(PSDExtractLayerData[] layers)
+        {
+            var exportableLayers = new List<PSDExtractLayerData>();
+            if (layers == null)
+                return exportableLayers;
+                
+            foreach (var layer in layers)
+            {
+                if (layer.bitmapLayer.Name.StartsWith("OUT_"))
+                {
+                    exportableLayers.Add(layer);
+                }
+                else if (layer.children != null && layer.children.Length > 0)
+                {
+                    // If the parent is not an exportable group, check its children
+                    exportableLayers.AddRange(FindExportableLayers(layer.children));
+                }
+            }
+            return exportableLayers;
+        }
+        
+        /// <summary>
+        /// Calculates the combined bounding box of all layers that would be flattened.
+        /// </summary>
+        /// <param name="layers">The layer data to process.</param>
+        /// <param name="importHiddenLayers">Should hidden layers be included in the calculation?</param>
+        /// <returns>A Rectangle representing the union of all visible layer bounds.</returns>
+        internal static Rectangle GetFlattenedImageBounds(PSDExtractLayerData[] layers, bool importHiddenLayers)
+        {
+            var visibleLayers = new List<PSDExtractLayerData>();
+            CollectVisibleLayers(layers, importHiddenLayers, ref visibleLayers);
+
+            if (visibleLayers.Count == 0)
+            {
+                return Rectangle.Empty;
+            }
+
+            // Start with the bounds of the first visible layer
+            Rectangle mergedRect = visibleLayers[0].bitmapLayer.documentRect;
+
+            // Union the bounds of all other visible layers
+            for (int i = 1; i < visibleLayers.Count; i++)
+            {
+                mergedRect = Rectangle.Union(mergedRect, visibleLayers[i].bitmapLayer.documentRect);
+            }
+
+            return mergedRect;
+        }
+
+        /// <summary>
+        /// Recursively collects all non-group layers that are visible and would be part of the flatten operation.
+        /// </summary>
+        private static void CollectVisibleLayers(PSDExtractLayerData[] layers, bool importHiddenLayers, ref List<PSDExtractLayerData> visibleLayers)
+        {
+            foreach (var layer in layers)
+            {
+                // A layer is processed if it's visible (or if we import hidden ones) and if its import setting is true.
+                if ((layer.bitmapLayer.Visible || importHiddenLayers) && layer.importSetting.importLayer)
+                {
+                    if (layer.bitmapLayer.IsGroup)
+                    {
+                        if (layer.children != null)
+                        {
+                            CollectVisibleLayers(layer.children, importHiddenLayers, ref visibleLayers);
+                        }
+                    }
+                    else
+                    {
+                        // Only add actual pixel layers to the list for bounds calculation
+                        if (layer.bitmapLayer.Surface != null)
+                        {
+                            visibleLayers.Add(layer);
+                        }
+                    }
+                }
+            }
+        }
+
+        
 
         static void RegisterAssets(AssetImportContext ctx, ProducedAsset producedAsset, Action<LogType, string> logger)
         {

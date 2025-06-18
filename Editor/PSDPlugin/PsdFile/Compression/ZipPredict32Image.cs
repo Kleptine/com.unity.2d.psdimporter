@@ -13,6 +13,7 @@
 
 using System;
 using PDNWrapper;
+using UnityEngine;
 
 namespace PhotoshopFile.Compression
 {
@@ -40,6 +41,7 @@ namespace PhotoshopFile.Compression
                 return;
             }
 
+            Debug.LogWarning("32-bit zip prediction in the PSD Importer is not yet bursted");
             byte[] predictedData = new byte[buffer.Length];
             zipImage.Read(predictedData);
 

@@ -14,6 +14,7 @@
 using System;
 using System.IO.Compression;
 using PDNWrapper;
+using UnityEngine;
 
 namespace PhotoshopFile.Compression
 {
@@ -32,10 +33,12 @@ namespace PhotoshopFile.Compression
             switch (channel.ImageCompression)
             {
                 case ImageCompression.Raw:
+                    Debug.LogWarning("Raw image compression in the PSD Importer is not yet bursted");
                     imageData = new RawImage(data, channel.Rect.Size, bitDepth);
                     break;
 
                 case ImageCompression.Rle:
+                    Debug.LogWarning("RLE image compression in the PSD Importer is not yet bursted");
                     imageData = new RleImage(data, channel.RleRowLengths,
                             channel.Rect.Size, bitDepth);
                     break;

@@ -112,6 +112,9 @@ namespace UnityEditor.U2D.PSD
         [SerializeField] List<SpriteMetaData> m_SingleSpriteImportData = new List<SpriteMetaData>(1) { new SpriteMetaData() };
         [SerializeField] List<SpriteMetaData> m_MultiSpriteImportData = new List<SpriteMetaData>();
         [SerializeField] List<SpriteMetaData> m_LayeredSpriteImportData = new List<SpriteMetaData>();
+        
+        // If true, the importer will find layers and groups named with "OUT_*" and import them as separate textures.
+        [SerializeField] bool m_separateOutLayers = false;
 
         // --- Obsolete sprite import data containers
 

@@ -12,8 +12,12 @@
 /////////////////////////////////////////////////////////////////////////////////
 
 using System;
-using System.IO.Compression;
 using PDNWrapper;
+using System.IO.Compression;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
+using Unity.Burst;
 
 namespace PhotoshopFile.Compression
 {
@@ -31,9 +35,34 @@ namespace PhotoshopFile.Compression
         {
             // 16-bitdepth images are delta-encoded word-by-word.  The deltas
             // are thus big-endian and must be reversed for further processing.
-            ZipImage zipRawImage = new ZipImage(zipData, size, 16);
+            var zipRawImage = new ZipImage(zipData, size, 16);
             zipImage = new EndianReverser(zipRawImage);
         }
+        
+        /// <summary>
+        /// Job to unpredicts the decompressed, native-endian image data in parallel.
+        /// </summary>
+        [BurstCompile]
+        private struct UnpredictJob : IJobParallelFor
+        {
+            [NativeDisableParallelForRestriction]
+            public NativeArray<ushort> Data;
+            [ReadOnly] public int Width;
+
+            [BurstCompile]
+            public void Execute(int i)
+            {
+                int rowOffset = Width * i;
+                
+                // Start with column index 1 on each row
+                for (int j = 1; j < Width; ++j)
+                {
+                    var index = rowOffset + j;
+                    Data[index] += Data[index - 1];
+                }
+            }
+        }
+
 
         internal override void Read(byte[] buffer)
         {
@@ -44,9 +73,30 @@ namespace PhotoshopFile.Compression
 
             zipImage.Read(buffer);
 
+            unsafe
             {
+                // Wrap the managed byte array with a NativeArray without allocating new memory.
+                // Reinterpret the byte array as a ushort array to work with 16-bit pixel data.
+                fixed(void* bufferPtr = buffer)
                 {
-                    Unpredict(buffer);
+                    var nativeArray = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(bufferPtr, buffer.Length, Allocator.None);
+                    #if ENABLE_UNITY_COLLECTIONS_CHECKS
+                    var safetyHandle = AtomicSafetyHandle.Create();
+                    NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref nativeArray, safetyHandle);
+                    #endif
+                    var ushortArray = nativeArray.Reinterpret<ushort>(sizeof(byte));
+                    
+                    // Schedule and complete the job.
+                    var job = new UnpredictJob
+                    {
+                        Data = ushortArray,
+                        Width = Size.Width
+                    };
+                    job.Schedule(Size.Height, 1).Complete();
+                    
+                    #if ENABLE_UNITY_COLLECTIONS_CHECKS
+                    AtomicSafetyHandle.Release(safetyHandle);
+                    #endif
                 }
             }
         }
@@ -78,34 +128,6 @@ namespace PhotoshopFile.Compression
                         ptrData[ptrDataRowEnd * size + rowOffset + c] = b[c];
                     }
                     ptrDataRowEnd--;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Unpredicts the decompressed, native-endian image data.
-        /// </summary>
-        private void Unpredict(byte[] ptrData)
-        {
-            int size = sizeof(UInt16);
-            // Delta-decode each row
-            for (int i = 0; i < Size.Height; i++)
-            {
-                //UInt16* ptrDataRowEnd = ptrData + Size.Width;
-                int rowOffset = Size.Width * i * size;
-                // Start with column index 1 on each row
-                int start = 1;
-                while (start < Size.Width)
-                {
-                    ushort v = BitConverter.ToUInt16(ptrData, start * size + rowOffset);
-                    ushort v1 = BitConverter.ToUInt16(ptrData, (start - 1) * size + rowOffset);
-                    v += v1;
-                    byte[] b = BitConverter.GetBytes(v);
-                    for (int c = 0; c < b.Length; ++c)
-                    {
-                        ptrData[start * size + rowOffset + c] = b[c];
-                    }
-                    start++;
                 }
             }
         }

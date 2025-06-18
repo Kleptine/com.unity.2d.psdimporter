@@ -11,7 +11,8 @@
         "Unity.2D.Tilemap.Editor",
         "Unity.Mathematics",
         "Unity.Burst",
-        "Unity.InternalAPIEngineBridge.001"
+        "Unity.InternalAPIEngineBridge.001",
+        "Unity.2d.PsdImporter"
     ],
     "includePlatforms": [
         "Editor"

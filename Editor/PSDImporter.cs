@@ -10,6 +10,7 @@ using UnityEngine;
 using Unity.Collections;
 using System.Linq;
 using System.Reflection;
+using Unity.Psd;
 using UnityEditor.AssetImporters;
 using UnityEditor.U2D.Common;
 using UnityEditor.U2D.Sprites;
@@ -404,22 +405,30 @@ namespace UnityEditor.U2D.PSD
 
                 importData.documentSize = new Vector2Int(doc.width, doc.height);
 
-                bool singleSpriteMode = m_TextureImporterSettings.textureType == TextureImporterType.Sprite && m_TextureImporterSettings.spriteMode != (int)SpriteImportMode.Multiple;
                 TextureGenerationOutput output;
-                if (m_TextureImporterSettings.textureType != TextureImporterType.Sprite ||
-                    m_MosaicLayers == false || singleSpriteMode)
+
+                if (m_separateOutLayers)
                 {
-                    output = ImportFlattenImage(doc, ctx);
-                }
-                else
-                {
-                    output = ImportFromLayers(ctx);
+                    ImportLayersAsIndividualTextures(ctx, doc);
+                } else {
+                    bool singleSpriteMode = m_TextureImporterSettings.textureType == TextureImporterType.Sprite &&
+                                        m_TextureImporterSettings.spriteMode != (int)SpriteImportMode.Multiple;
+                    if (m_TextureImporterSettings.textureType != TextureImporterType.Sprite ||
+                        m_MosaicLayers == false || singleSpriteMode)
+                    {
+                        output = ImportFlattenImage(doc, ctx);
+                    }
+                    else
+                    {
+                        output = ImportFromLayers(ctx);
+                    }
+                    
+                    if (output.texture != null && output.sprites != null)
+                        SetPhysicsOutline(GetDataProvider<ISpritePhysicsOutlineDataProvider>(), output.sprites, definitionScale, pixelsPerUnit, m_GeneratePhysicsShape);
+
+                    RegisterAssets(ctx, output);
                 }
 
-                if (output.texture != null && output.sprites != null)
-                    SetPhysicsOutline(GetDataProvider<ISpritePhysicsOutlineDataProvider>(), output.sprites, definitionScale, pixelsPerUnit, m_GeneratePhysicsShape);
-
-                RegisterAssets(ctx, output);
             }
             catch (Exception e)
             {
@@ -887,6 +896,162 @@ namespace UnityEditor.U2D.PSD
             }
 
             return output;
+        }
+
+        // Imports the file and separates out all layers or groups that are named with OUT_, flattening them.
+        private void ImportLayersAsIndividualTextures(AssetImportContext ctx, Document doc)
+        {
+            // We don't have a main texture in this mode, but we still need a main object.
+            // We can use a simple GameObject as the main asset.
+            var textureSet = ScriptableObject.CreateInstance<TextureSet>();
+            textureSet.DocumentSize = new Vector2(doc.width, doc.height);
+            ctx.AddObjectToAsset("Main", textureSet);
+            ctx.SetMainObject(textureSet);
+
+            // Use a helper to find all layers and groups that match the prefix
+            var layersToExport = FindExportableLayers(m_ExtractData);
+
+            foreach (var layerData in layersToExport)
+            {
+                NativeArray<Color32> imageData = default;
+
+                try
+                {
+                    int width;
+                    int height;
+                    Rectangle rect;
+                    if (layerData.bitmapLayer.IsGroup)
+                    {
+                        // For a group, flatten it into a single image
+                        width = doc.width;
+                        height = doc.height;
+                        rect = GetFlattenedImageBounds(layerData.children, false);
+                        imageData = new NativeArray<Color32>(width * height, Allocator.Persistent);
+                        FlattenImageTask.Execute(layerData.children, ref imageData, true, new Vector2Int(width, height));
+                    }
+                    else
+                    {
+                        // For a single layer, just use its texture data
+                        var layer = layerData.bitmapLayer;
+                        width = layer.Surface.width;
+                        height = layer.Surface.height;
+                        rect = layerData.bitmapLayer.documentRect;
+                        if (layer.Surface.color.IsCreated && layer.Surface.color.Length > 0)
+                        {
+                            imageData = new NativeArray<Color32>(layer.Surface.color, Allocator.Persistent);
+                        }
+                    }
+
+                    if (imageData.IsCreated && imageData.Length > 0)
+                    {
+                        // Use a simplified sprite metadata for texture generation
+                        SpriteMetaData[] spriteMetaData = { new SpriteMetaData { rect = new Rect(0, 0, width, height) } };
+                        
+                        // Generate the texture using the existing pipeline
+                        TextureGenerationOutput output = ImportTexture(ctx, imageData, width, height, spriteMetaData);
+
+                        if (output.texture != null)
+                        {
+                            // Add the generated texture as a sub-asset
+                            string assetName = layerData.bitmapLayer.Name.Replace("OUT_", "").Trim();
+                            output.texture.name = assetName;
+                            
+                            Debug.Log(layerData.bitmapLayer.Name + "  " + doc.width + "   " + rect);
+
+                            textureSet.Textures.Add(new TextureSet.SubTexture()
+                            {
+                                DocumentRect = new Rect(rect.X, rect.Y, rect.Width, rect.Height),
+                                Texture = output.texture,
+                            });
+                            ctx.AddObjectToAsset(assetName, output.texture, output.thumbNail);
+                        }
+                    }
+                }
+                finally
+                {
+                    if(imageData.IsCreated)
+                        imageData.Dispose();
+                }
+            }
+        }
+
+        // Helper method to recursively find layers/groups with the "OUT_" prefix
+        private List<PSDExtractLayerData> FindExportableLayers(PSDExtractLayerData[] layers)
+        {
+            var exportableLayers = new List<PSDExtractLayerData>();
+            if (layers == null)
+                return exportableLayers;
+                
+            foreach (var layer in layers)
+            {
+                if (layer.bitmapLayer.Name.StartsWith("OUT_"))
+                {
+                    exportableLayers.Add(layer);
+                }
+                else if (layer.children != null && layer.children.Length > 0)
+                {
+                    // If the parent is not an exportable group, check its children
+                    exportableLayers.AddRange(FindExportableLayers(layer.children));
+                }
+            }
+            return exportableLayers;
+        }
+        
+        /// <summary>
+        /// Calculates the combined bounding box of all layers that would be flattened.
+        /// </summary>
+        /// <param name="layers">The layer data to process.</param>
+        /// <param name="importHiddenLayers">Should hidden layers be included in the calculation?</param>
+        /// <returns>A Rectangle representing the union of all visible layer bounds.</returns>
+        internal static Rectangle GetFlattenedImageBounds(PSDExtractLayerData[] layers, bool importHiddenLayers)
+        {
+            var visibleLayers = new List<PSDExtractLayerData>();
+            CollectVisibleLayers(layers, importHiddenLayers, ref visibleLayers);
+
+            if (visibleLayers.Count == 0)
+            {
+                return Rectangle.Empty;
+            }
+
+            // Start with the bounds of the first visible layer
+            Rectangle mergedRect = visibleLayers[0].bitmapLayer.documentRect;
+
+            // Union the bounds of all other visible layers
+            for (int i = 1; i < visibleLayers.Count; i++)
+            {
+                mergedRect = Rectangle.Union(mergedRect, visibleLayers[i].bitmapLayer.documentRect);
+            }
+
+            return mergedRect;
+        }
+
+        /// <summary>
+        /// Recursively collects all non-group layers that are visible and would be part of the flatten operation.
+        /// </summary>
+        private static void CollectVisibleLayers(PSDExtractLayerData[] layers, bool importHiddenLayers, ref List<PSDExtractLayerData> visibleLayers)
+        {
+            foreach (var layer in layers)
+            {
+                // A layer is processed if it's visible (or if we import hidden ones) and if its import setting is true.
+                if ((layer.bitmapLayer.Visible || importHiddenLayers) && layer.importSetting.importLayer)
+                {
+                    if (layer.bitmapLayer.IsGroup)
+                    {
+                        if (layer.children != null)
+                        {
+                            CollectVisibleLayers(layer.children, importHiddenLayers, ref visibleLayers);
+                        }
+                    }
+                    else
+                    {
+                        // Only add actual pixel layers to the list for bounds calculation
+                        if (layer.bitmapLayer.Surface != null)
+                        {
+                            visibleLayers.Add(layer);
+                        }
+                    }
+                }
+            }
         }
 
         internal void MigrateOlderData()

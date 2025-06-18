@@ -32,7 +32,7 @@ namespace UnityEditor.U2D.PSD
     /// ScriptedImporter to import Photoshop files
     /// </summary>
     // Version using unity release + 5 digit padding for future upgrade. Eg 2021.2 -> 21200000
-    [ScriptedImporter(23100002, new string[] { "psb" }, new[] { "psd" }, AllowCaching = true)]
+    [ScriptedImporter(23100003, new string[] { "psb" }, new[] { "psd" }, AllowCaching = true)]
     [HelpURL("https://docs.unity3d.com/Packages/com.unity.2d.psdimporter@latest")]
     [MovedFrom("UnityEditor.Experimental.AssetImporters")]
     public partial class PSDImporter : ScriptedImporter, ISpriteEditorDataProvider

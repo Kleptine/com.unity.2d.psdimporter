@@ -18,7 +18,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using PDNWrapper;
+using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
 
 namespace PhotoshopFile
 {
@@ -86,30 +89,29 @@ namespace PhotoshopFile
 
         ///////////////////////////////////////////////////////////////////////////
 
-        /// <summary>
-        /// Reverses the endianness of a 2-byte word.
-        /// </summary>
-        static public void SwapBytes2(byte[] ptr, int start)
+        [BurstCompile]
+        private struct SwapBytes2Job : IJobParallelFor
         {
-            byte byte0 = ptr[start];
-            ptr[start] = ptr[start + 1];
-            ptr[start + 1] = byte0;
+            public NativeArray<ushort> Data;
+            public void Execute(int index)
+            {
+                var value = Data[index];
+                Data[index] = (ushort)((value >> 8) | (value << 8));
+            }
         }
 
-        ///////////////////////////////////////////////////////////////////////////
-
-        /// <summary>
-        /// Reverses the endianness of a 4-byte word.
-        /// </summary>
-        static public void SwapBytes4(byte[] ptr, int start)
+        [BurstCompile]
+        private struct SwapBytes4Job : IJobParallelFor
         {
-            byte byte0 = ptr[start];
-            byte byte1 = ptr[start + 1];
-
-            ptr[start] = ptr[start + 3];
-            ptr[start + 1] = ptr[start + 2];
-            ptr[start + 2] = byte1;
-            ptr[start + 3] = byte0;
+            public NativeArray<uint> Data;
+            public void Execute(int index)
+            {
+                var value = Data[index];
+                Data[index] = ((value & 0x000000FFU) << 24) |
+                              ((value & 0x0000FF00U) << 8) |
+                              ((value & 0x00FF0000U) >> 8) |
+                              ((value & 0xFF000000U) >> 24);
+            }
         }
 
         /// <summary>
@@ -146,7 +148,7 @@ namespace PhotoshopFile
 
                 default:
                     throw new Exception(
-                    "Byte-swapping implemented only for 16-bit and 32-bit depths.");
+                        "Byte-swapping implemented only for 16-bit and 32-bit depths.");
             }
         }
 
@@ -162,16 +164,31 @@ namespace PhotoshopFile
             if (byteArray.Length < endIdx)
                 throw new IndexOutOfRangeException();
 
-
+            unsafe
             {
-                //fixed (byte* arrayPtr = &byteArray[0])
+                fixed (void* bufferPtr = &byteArray[startIdx])
                 {
-                    //byte* ptr = arrayPtr + startIdx;
-                    //byte* endPtr = arrayPtr + endIdx;
-                    while (startIdx < endIdx)
+                    var nativeArray =
+                        NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(bufferPtr, count * 2,
+                            Allocator.None);
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                    var safetyHandle = AtomicSafetyHandle.Create();
+                    NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref nativeArray, safetyHandle);
+#endif
+
+                    try
                     {
-                        SwapBytes2(byteArray, startIdx);
-                        startIdx += 2;
+                        var job = new SwapBytes2Job
+                        {
+                            Data = nativeArray.Reinterpret<ushort>(sizeof(byte))
+                        };
+                        job.Schedule(count, 64).Complete();
+                    }
+                    finally
+                    {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                        AtomicSafetyHandle.Release(safetyHandle);
+#endif
                     }
                 }
             }
@@ -189,16 +206,32 @@ namespace PhotoshopFile
             if (byteArray.Length < endIdx)
                 throw new IndexOutOfRangeException();
 
-
+            unsafe
             {
-                //fixed (byte* arrayPtr = &byteArray[0])
+                fixed (void* bufferPtr = &byteArray[startIdx])
                 {
-                    //byte* ptr = arrayPtr + startIdx;
-                    //byte* endPtr = arrayPtr + endIdx;
-                    while (startIdx < endIdx)
+                    var nativeArray =
+                        NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<byte>(bufferPtr, count * 4,
+                            Allocator.None);
+
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                    var safetyHandle = AtomicSafetyHandle.Create();
+                    NativeArrayUnsafeUtility.SetAtomicSafetyHandle(ref nativeArray, safetyHandle);
+#endif
+
+                    try
                     {
-                        SwapBytes4(byteArray, startIdx);
-                        startIdx += 4;
+                        var job = new SwapBytes4Job
+                        {
+                            Data = nativeArray.Reinterpret<uint>(sizeof(byte))
+                        };
+                        job.Schedule(count, 64).Complete();
+                    }
+                    finally
+                    {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                        AtomicSafetyHandle.Release(safetyHandle);
+#endif
                     }
                 }
             }
@@ -238,7 +271,7 @@ namespace PhotoshopFile
                     "value and multiple cannot have opposite signs.");
             }
 
-            int remainder = value % multiple;
+            var remainder = value % multiple;
             if (remainder > 0)
             {
                 value += (multiple - remainder);
@@ -254,11 +287,11 @@ namespace PhotoshopFile
             if ((length < 0) || (padMultiple < 0))
                 throw new ArgumentException();
 
-            int remainder = length % padMultiple;
+            var remainder = length % padMultiple;
             if (remainder == 0)
                 return 0;
 
-            int padding = padMultiple - remainder;
+            var padding = padMultiple - remainder;
             return padding;
         }
 

@@ -50,6 +50,7 @@ namespace UnityEditor.U2D.PSD
         SerializedProperty m_SpritePivot;
         SerializedProperty m_NPOTScale;
         SerializedProperty m_IsReadable;
+        SerializedProperty m_separateOutLayers;
         SerializedProperty m_sRGBTexture;
         SerializedProperty m_AlphaSource;
         SerializedProperty m_Swizzle;
@@ -152,6 +153,7 @@ namespace UnityEditor.U2D.PSD
             m_Padding = serializedObject.FindProperty("m_Padding");
             m_SpriteSizeExpand = serializedObject.FindProperty("m_SpriteSizeExpand");
             m_Pipeline = serializedObject.FindProperty("m_Pipeline");
+            m_separateOutLayers = serializedObject.FindProperty("m_separateOutLayers");
 
             SerializedProperty textureImporterSettingsSP = serializedObject.FindProperty("m_TextureImporterSettings");
             m_TextureType = textureImporterSettingsSP.FindPropertyRelative("m_TextureType");
@@ -1160,6 +1162,7 @@ namespace UnityEditor.U2D.PSD
         {
             ColorSpaceGUI();
             AlphaHandlingGUI();
+            EditorGUILayout.PropertyField(m_separateOutLayers, styles.separateOutLayers);
         }
 
         void ColorSpaceGUI()
@@ -1659,6 +1662,9 @@ namespace UnityEditor.U2D.PSD
                 (int)TextureImporterType.Default,
                 (int)TextureImporterType.Sprite,
             };
+
+            public readonly GUIContent separateOutLayers = new GUIContent("Separate OUT Layers",
+                "If true, the importer will find layers and groups named with 'OUT_ *' and import them as separate textures.");
 
             private readonly GUIContent textureShape2D = new GUIContent("2D, Texture is 2D.");
             private readonly GUIContent textureShapeCube = new GUIContent("Cube", "Texture is a Cubemap.");

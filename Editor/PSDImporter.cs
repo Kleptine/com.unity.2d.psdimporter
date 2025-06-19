@@ -958,7 +958,7 @@ namespace UnityEditor.U2D.PSD
                             
                             Debug.Log(layerData.bitmapLayer.Name + "  " + doc.width + "   " + rect);
 
-                            textureSet.Textures.Add(new TextureSet.SubTexture()
+                            textureSet.Layers.Add(new TextureSet.Layer()
                             {
                                 DocumentRect = new Rect(rect.X, rect.Y, rect.Width, rect.Height),
                                 Texture = output.texture,

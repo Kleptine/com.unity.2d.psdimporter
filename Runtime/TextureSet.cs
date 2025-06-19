@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -9,6 +10,7 @@ namespace Unity.Psd
     /// </summary>
     public class TextureSet : ScriptableObject
     {
+        [Serializable]
         public struct SubTexture
         {
             /// <summary>Bounds of this sub layer within the broader document. In pixels. 0..size</summary>

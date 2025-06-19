@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Unity.Psd
 {
@@ -10,8 +11,13 @@ namespace Unity.Psd
     /// </summary>
     public class TextureSet : ScriptableObject
     {
+        /// <summary>
+        /// The name given to the first layer of a texture set, if we're importing a PSD with a single unnamed layer.
+        /// </summary>
+        public static string DEFAULT_NAME = "default";
+        
         [Serializable]
-        public struct SubTexture
+        public struct Layer
         {
             /// <summary>Bounds of this sub layer within the broader document. In pixels. 0..size</summary>
             public Rect DocumentRect;
@@ -21,7 +27,8 @@ namespace Unity.Psd
         }
 
         /// <summary>Each layer imported from the PSD file.</summary>
-        public List<SubTexture> Textures = new();
+        [FormerlySerializedAs("Textures")]
+        public List<Layer> Layers = new();
 
         /// <summary>
         /// The size of the document, irrespective of the layers (some layers may be smaller, etc).

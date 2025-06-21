@@ -17,7 +17,7 @@ namespace UnityEditor.U2D.PSD
             public int4 layerRect;
         }
 
-        public static unsafe void Execute(in PSDExtractLayerData[] layer, ref NativeArray<Color32> output, bool importHiddenLayer, Vector2Int documentSize)
+        public static unsafe void Execute(in PSDExtractLayerData[] layer, ref NativeArray<Color32> output, bool importHiddenLayer, Vector2Int documentSize, Vector2Int documentOffset = default)
         {
             UnityEngine.Profiling.Profiler.BeginSample("FlattenImage");
 
@@ -42,7 +42,10 @@ namespace UnityEditor.U2D.PSD
             for (int i = 0; i < layerData.Count; ++i)
             {
                 job.inputTextures[i] = layerData[i].layerBuffer;
-                job.inputTextureRects[i] = layerData[i].layerRect;
+                int4 rect = layerData[i].layerRect;
+                rect.x -= documentOffset.x;
+                rect.y -= documentOffset.y;
+                job.inputTextureRects[i] = rect;
             }
 
             job.layersPerJob = layersPerJob;

@@ -911,7 +911,7 @@ namespace UnityEditor.U2D.PSD
             // Use a helper to find all layers and groups that match the prefix
             var layersToExport = FindExportableLayers(m_ExtractData);
 
-            foreach (var layerData in layersToExport)
+            foreach (PSDExtractLayerData layerData in layersToExport)
             {
                 NativeArray<Color32> imageData = default;
 
@@ -923,11 +923,12 @@ namespace UnityEditor.U2D.PSD
                     if (layerData.bitmapLayer.IsGroup)
                     {
                         // For a group, flatten it into a single image
-                        width = doc.width;
-                        height = doc.height;
                         rect = GetFlattenedImageBounds(layerData.children, false);
+                        width = rect.Width;
+                        height = rect.Height;
+                        var offset = new Vector2Int(rect.X, rect.Y); // Get the offset 
                         imageData = new NativeArray<Color32>(width * height, Allocator.Persistent);
-                        FlattenImageTask.Execute(layerData.children, ref imageData, true, new Vector2Int(width, height));
+                        FlattenImageTask.Execute(layerData.children, ref imageData, m_ImportHiddenLayers, new Vector2Int(width, height), offset);
                     }
                     else
                     {
@@ -936,9 +937,11 @@ namespace UnityEditor.U2D.PSD
                         width = layer.Surface.width;
                         height = layer.Surface.height;
                         rect = layerData.bitmapLayer.documentRect;
+                        var offset = new Vector2Int(rect.X, rect.Y); // Get the offset 
                         if (layer.Surface.color.IsCreated && layer.Surface.color.Length > 0)
                         {
-                            imageData = new NativeArray<Color32>(layer.Surface.color, Allocator.Persistent);
+                            imageData = new NativeArray<Color32>(width * height, Allocator.Persistent);
+                            FlattenImageTask.Execute(new []{ layerData }, ref imageData, m_ImportHiddenLayers, new Vector2Int(width, height), offset);
                         }
                     }
 
@@ -960,7 +963,7 @@ namespace UnityEditor.U2D.PSD
 
                             textureSet.Layers.Add(new TextureSet.Layer()
                             {
-                                DocumentRect = new Rect(rect.X, rect.Y, rect.Width, rect.Height),
+                                DocumentRect = new Rect(rect.X, doc.height - rect.Y - rect.Height, rect.Width, rect.Height),
                                 Texture = output.texture,
                             });
                             ctx.AddObjectToAsset(assetName, output.texture, output.thumbNail);

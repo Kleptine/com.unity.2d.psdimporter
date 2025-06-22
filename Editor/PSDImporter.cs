@@ -924,24 +924,22 @@ namespace UnityEditor.U2D.PSD
                     {
                         // For a group, flatten it into a single image
                         rect = GetFlattenedImageBounds(layerData.children, false);
-                        width = rect.Width;
-                        height = rect.Height;
-                        var offset = new Vector2Int(rect.X, rect.Y); // Get the offset 
+                        width = doc.width;
+                        height = doc.height;
                         imageData = new NativeArray<Color32>(width * height, Allocator.Persistent);
-                        FlattenImageTask.Execute(layerData.children, ref imageData, m_ImportHiddenLayers, new Vector2Int(width, height), offset);
+                        FlattenImageTask.Execute(layerData.children, ref imageData, m_ImportHiddenLayers, new Vector2Int(width, height));
                     }
                     else
                     {
                         // For a single layer, just use its texture data
                         var layer = layerData.bitmapLayer;
-                        width = layer.Surface.width;
-                        height = layer.Surface.height;
+                        width = doc.width;
+                        height = doc.height;
                         rect = layerData.bitmapLayer.documentRect;
-                        var offset = new Vector2Int(rect.X, rect.Y); // Get the offset 
                         if (layer.Surface.color.IsCreated && layer.Surface.color.Length > 0)
                         {
                             imageData = new NativeArray<Color32>(width * height, Allocator.Persistent);
-                            FlattenImageTask.Execute(new []{ layerData }, ref imageData, m_ImportHiddenLayers, new Vector2Int(width, height), offset);
+                            FlattenImageTask.Execute(new []{ layerData }, ref imageData, m_ImportHiddenLayers, new Vector2Int(width, height));
                         }
                     }
 
@@ -963,7 +961,8 @@ namespace UnityEditor.U2D.PSD
 
                             textureSet.Layers.Add(new TextureSet.Layer()
                             {
-                                DocumentRect = new Rect(rect.X, doc.height - rect.Y - rect.Height, rect.Width, rect.Height),
+                                // DocumentRect = new Rect(rect.X, doc.height - rect.Y - rect.Height, rect.Width, rect.Height),
+                                DocumentRect = new Rect(0,0,doc.width, doc.height),
                                 Texture = output.texture,
                             });
                             ctx.AddObjectToAsset(assetName, output.texture, output.thumbNail);

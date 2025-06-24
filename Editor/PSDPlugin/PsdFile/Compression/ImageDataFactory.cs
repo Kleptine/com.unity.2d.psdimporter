@@ -33,7 +33,6 @@ namespace PhotoshopFile.Compression
             switch (channel.ImageCompression)
             {
                 case ImageCompression.Raw:
-                    Debug.LogWarning("Raw image compression in the PSD Importer is not yet bursted");
                     imageData = new RawImage(data, channel.Rect.Size, bitDepth);
                     break;
 

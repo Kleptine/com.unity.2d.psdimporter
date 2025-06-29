@@ -118,6 +118,7 @@ namespace UnityEditor.U2D.PSD
 
         // If true, the importer will find layers and groups named with "OUT_*" and import them as separate textures.
         [SerializeField] bool m_separateOutLayers = false;
+        [SerializeField] bool m_importTextureSet = false;
 
         void ISerializationCallbackReceiver.OnBeforeSerialize() { }
 
@@ -410,9 +411,9 @@ namespace UnityEditor.U2D.PSD
 
                 importData.documentSize = new Vector2Int(doc.width, doc.height);
 
-                if (m_separateOutLayers)
+                if (m_importTextureSet)
                 {
-                    ImportLayersAsIndividualTextures(ctx, doc);
+                    ImportAsTextureSet(ctx, doc);
                 }
                 else
                 {
@@ -734,14 +735,34 @@ namespace UnityEditor.U2D.PSD
         }
 
         // Imports the file and separates out all layers or groups that are named with OUT_, flattening them.
-        private void ImportLayersAsIndividualTextures(AssetImportContext ctx, Document doc)
+        private void ImportAsTextureSet(AssetImportContext ctx, Document doc)
         {
             // We don't have a main texture in this mode, but we still need a main object.
             // We can use a simple GameObject as the main asset.
             var textureSet = ScriptableObject.CreateInstance<TextureSet>();
             textureSet.DocumentSize = new Vector2(doc.width, doc.height);
+            textureSet.name = Path.GetFileNameWithoutExtension(ctx.assetPath);
             ctx.AddObjectToAsset("Main", textureSet);
             ctx.SetMainObject(textureSet);
+            
+            // If we're not separating out layers, just flatten all.
+            if (!m_separateOutLayers)
+            {
+                using (PSDImportOutput flattened = ImportFlattenImage(doc, ctx, this))
+                {
+                    Texture2D flattenedTexture = flattened.textureGenerationOutput.GetTexture(ctx, this);
+                    Texture2D flattenedThumbNail = flattened.textureGenerationOutput.GetThumbnail(ctx, this);
+                    textureSet.Layers.Add(new TextureSet.Layer()
+                    {
+                        // DocumentRect = new Rect(rect.X, doc.height - rect.Y - rect.Height, rect.Width, rect.Height),
+                        DocumentRect = new Rect(0,0,doc.width, doc.height),
+                        Texture = flattenedTexture,
+                    });
+                    flattenedTexture.name = textureSet.name;
+                    ctx.AddObjectToAsset(textureSet.name, flattenedTexture, flattenedThumbNail);
+                }
+                return;
+            }
 
             // Use a helper to find all layers and groups that match the prefix
             var layersToExport = FindExportableLayers(m_ExtractData);

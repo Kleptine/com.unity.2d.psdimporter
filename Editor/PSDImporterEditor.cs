@@ -48,6 +48,7 @@ namespace UnityEditor.U2D.PSD
         SerializedProperty m_SpritePivot;
         SerializedProperty m_NPOTScale;
         SerializedProperty m_IsReadable;
+        SerializedProperty m_importTextureSet;
         SerializedProperty m_separateOutLayers;
         SerializedProperty m_sRGBTexture;
         SerializedProperty m_AlphaSource;
@@ -158,6 +159,7 @@ namespace UnityEditor.U2D.PSD
             m_SpriteSizeExpandChanged = serializedObject.FindProperty("m_SpriteSizeExpandChanged");
             m_Pipeline = serializedObject.FindProperty("m_Pipeline");
             m_separateOutLayers = serializedObject.FindProperty("m_separateOutLayers");
+            m_importTextureSet = serializedObject.FindProperty("m_importTextureSet");
 
             SerializedProperty textureImporterSettingsSP = serializedObject.FindProperty("m_TextureImporterSettings");
             m_TextureType = textureImporterSettingsSP.FindPropertyRelative("m_TextureType");
@@ -1171,7 +1173,14 @@ namespace UnityEditor.U2D.PSD
         {
             ColorSpaceGUI();
             AlphaHandlingGUI();
-            EditorGUILayout.PropertyField(m_separateOutLayers, styles.separateOutLayers);
+            if (m_TexturePlatformSettingsHelper.textureType == TextureImporterType.Default)
+            {
+                EditorGUILayout.PropertyField(m_importTextureSet, styles.importTextureSet);
+                if (m_importTextureSet.boolValue)
+                {
+                    EditorGUILayout.PropertyField(m_separateOutLayers, styles.separateOutLayers);
+                }
+            }
         }
 
         void ColorSpaceGUI()
@@ -1672,8 +1681,10 @@ namespace UnityEditor.U2D.PSD
                 (int)TextureImporterType.Sprite,
             };
 
-            public readonly GUIContent separateOutLayers = new GUIContent("Separate OUT Layers",
-                "If true, the importer will find layers and groups named with 'OUT_ *' and import them as separate textures.");
+            public readonly GUIContent importTextureSet = new GUIContent("Import Texture Set",
+                "If true, the importer will generate a TextureSet asset rather than a normal Texture2d. See OUT settings.");
+            public readonly GUIContent separateOutLayers = new GUIContent("Extract OUT_* Layers",
+                "If true, the importer will find layers and groups named with 'OUT_ *' and import them as separate textures in the texture set.");
 
             private readonly GUIContent textureShape2D = new GUIContent("2D, Texture is 2D.");
             private readonly GUIContent textureShapeCube = new GUIContent("Cube", "Texture is a Cubemap.");

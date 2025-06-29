@@ -116,6 +116,7 @@ namespace UnityEditor.U2D.PSD
         
         // If true, the importer will find layers and groups named with "OUT_*" and import them as separate textures.
         [SerializeField] bool m_separateOutLayers = false;
+        [SerializeField] bool m_importTextureSet = false;
 
         // --- Obsolete sprite import data containers
 
@@ -407,9 +408,9 @@ namespace UnityEditor.U2D.PSD
 
                 TextureGenerationOutput output;
 
-                if (m_separateOutLayers)
+                if (m_importTextureSet)
                 {
-                    ImportLayersAsIndividualTextures(ctx, doc);
+                    ImportAsTextureSet(ctx, doc);
                 } else {
                     bool singleSpriteMode = m_TextureImporterSettings.textureType == TextureImporterType.Sprite &&
                                         m_TextureImporterSettings.spriteMode != (int)SpriteImportMode.Multiple;
@@ -899,14 +900,30 @@ namespace UnityEditor.U2D.PSD
         }
 
         // Imports the file and separates out all layers or groups that are named with OUT_, flattening them.
-        private void ImportLayersAsIndividualTextures(AssetImportContext ctx, Document doc)
+        private void ImportAsTextureSet(AssetImportContext ctx, Document doc)
         {
             // We don't have a main texture in this mode, but we still need a main object.
             // We can use a simple GameObject as the main asset.
             var textureSet = ScriptableObject.CreateInstance<TextureSet>();
             textureSet.DocumentSize = new Vector2(doc.width, doc.height);
+            textureSet.name = Path.GetFileNameWithoutExtension(ctx.assetPath);
             ctx.AddObjectToAsset("Main", textureSet);
             ctx.SetMainObject(textureSet);
+            
+            // If we're not separating out layers, just flatten all.
+            if (!m_separateOutLayers)
+            {
+                var textureGen = ImportFlattenImage(doc, ctx);
+                textureSet.Layers.Add(new TextureSet.Layer()
+                {
+                    // DocumentRect = new Rect(rect.X, doc.height - rect.Y - rect.Height, rect.Width, rect.Height),
+                    DocumentRect = new Rect(0,0,doc.width, doc.height),
+                    Texture = textureGen.texture,
+                });
+                textureGen.texture.name = textureSet.name;
+                ctx.AddObjectToAsset(textureSet.name, textureGen.texture, textureGen.thumbNail);
+                return;
+            }
 
             // Use a helper to find all layers and groups that match the prefix
             var layersToExport = FindExportableLayers(m_ExtractData);

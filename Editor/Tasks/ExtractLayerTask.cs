@@ -185,7 +185,7 @@ namespace UnityEditor.U2D.PSD
                     bitmapLayer.Surface.color.Length > 0)
                     surface = bitmapLayer.Surface.color;
 
-                PSDLayer extractedLayer = new PSDLayer(surface, parentGroupIndex, bitmapLayer.IsGroup, bitmapLayer.Name, layerRect.width, layerRect.height, bitmapLayer.LayerID, bitmapLayer.Visible)
+                PSDLayer extractedLayer = new PSDLayer(surface, parentGroupIndex, bitmapLayer.IsGroup, bitmapLayer.Name, layerRect.width, layerRect.height, bitmapLayer.LayerID, bitmapLayer.Visible, bitmapLayer.Opacity)
                 {
                     spriteID = inputLayer.spriteId,
                     flatten = bitmapLayer.IsGroup && inputLayer.importSetting.flatten,

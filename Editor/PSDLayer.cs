@@ -27,13 +27,15 @@ namespace UnityEditor.U2D.PSD
         bool m_IsImported;
         [SerializeField]
         bool m_IsVisible;
+        [SerializeField]
+        byte m_Opacity;
 
         [NonSerialized]
         Vector2 m_LayerPosition;
         [NonSerialized]
         GameObject m_GameObject;
 
-        public PSDLayer(NativeArray<Color32> tex, int parent, bool group, string layerName, int width, int height, int id, bool hidden)
+        public PSDLayer(NativeArray<Color32> tex, int parent, bool group, string layerName, int width, int height, int id, bool hidden, byte opacity)
         {
             isGroup = group;
             parentIndex = parent;
@@ -46,6 +48,7 @@ namespace UnityEditor.U2D.PSD
             m_IsImported = false;
             m_IsVisible = hidden;
             m_SpriteID = new GUID().ToString();
+            m_Opacity = opacity;
         }
 
         public PSDLayer(PSDLayer layer)
@@ -78,6 +81,8 @@ namespace UnityEditor.U2D.PSD
         public GUID spriteID { get { return new GUID(m_SpriteID); } set { m_SpriteID = value.ToString(); } }
         public Vector2 layerPosition { get => m_LayerPosition; set => m_LayerPosition = value; }
         public GameObject gameObject { get { return m_GameObject; } set { m_GameObject = value; } }
+
+        public byte opacity { get { return m_Opacity; } set { m_Opacity = value; } }
 
         public bool flatten
         {

@@ -15,6 +15,7 @@ namespace UnityEditor.U2D.PSD
         {
             public IntPtr layerBuffer;
             public int4 layerRect;
+            public byte opacity;
         }
 
         public static unsafe void Execute(in PSDExtractLayerData[] layer, ref NativeArray<Color32> output, bool importHiddenLayer, Vector2Int documentSize, Vector2Int documentOffset = default)
@@ -38,6 +39,7 @@ namespace UnityEditor.U2D.PSD
 
             job.inputTextures = new NativeArray<IntPtr>(layerData.Count, Allocator.TempJob);
             job.inputTextureRects = new NativeArray<int4>(layerData.Count, Allocator.TempJob);
+            job.inputTextureOpacities = new NativeArray<byte>(layerData.Count, Allocator.TempJob);
 
             for (int i = 0; i < layerData.Count; ++i)
             {
@@ -46,6 +48,7 @@ namespace UnityEditor.U2D.PSD
                 rect.x -= documentOffset.x;
                 rect.y -= documentOffset.y;
                 job.inputTextureRects[i] = rect;
+                job.inputTextureOpacities[i] = layerData[i].opacity;
             }
 
             job.layersPerJob = layersPerJob;
@@ -60,6 +63,7 @@ namespace UnityEditor.U2D.PSD
             job.outputTextures = new NativeArray<IntPtr>(jobCount, Allocator.TempJob);
             combineJob.inputTextures = new NativeArray<IntPtr>(jobCount, Allocator.TempJob);
             combineJob.inputTextureRects = new NativeArray<int4>(jobCount, Allocator.TempJob);
+            combineJob.inputTextureOpacities = new NativeArray<byte>(jobCount, Allocator.TempJob);
 
             for (int i = 0; i < jobCount; ++i)
             {
@@ -68,6 +72,7 @@ namespace UnityEditor.U2D.PSD
                 job.outputTextures[i] = new IntPtr(premergedBuffer[i].GetUnsafePtr());
                 combineJob.inputTextures[i] = new IntPtr(premergedBuffer[i].GetUnsafeReadOnlyPtr());
                 combineJob.inputTextureRects[i] = new int4(0, 0, documentSize.x, documentSize.y);
+                combineJob.inputTextureOpacities[i] = 255;
             }
 
             combineJob.outputTextureSizes = new NativeArray<int2>(new[] { new int2(documentSize.x, documentSize.y) }, Allocator.TempJob);
@@ -105,7 +110,8 @@ namespace UnityEditor.U2D.PSD
             LayerData data = new LayerData()
             {
                 layerBuffer = new IntPtr(bitmapLayer.Surface.color.GetUnsafeReadOnlyPtr()),
-                layerRect = new int4(layerRect.X, layerRect.Y, layerRect.Width, layerRect.Height)
+                layerRect = new int4(layerRect.X, layerRect.Y, layerRect.Width, layerRect.Height),
+                opacity = bitmapLayer.Opacity
             };
             layerData.Add(data);
         }
@@ -117,6 +123,8 @@ namespace UnityEditor.U2D.PSD
             public NativeArray<IntPtr> inputTextures;
             [ReadOnly, DeallocateOnJobCompletion]
             public NativeArray<int4> inputTextureRects;
+            [ReadOnly, DeallocateOnJobCompletion]
+            public NativeArray<byte> inputTextureOpacities;
             [ReadOnly]
             public int layersPerJob;
             [ReadOnly]
@@ -144,6 +152,8 @@ namespace UnityEditor.U2D.PSD
                     int outWidth = outputTextureSizes[index].x;
                     int outHeight = outputTextureSizes[index].y;
 
+                    float opacity = inputTextureOpacities[layerIndex] / 255.0f;
+
                     for (int y = 0; y < inHeight; ++y)
                     {
                         int outPosY = y + inStartPosY;
@@ -165,6 +175,8 @@ namespace UnityEditor.U2D.PSD
                             int outBufferIndex = outRow + outPosX;
 
                             Color inColor = inputColor[inBufferIndex];
+                            inColor.a *= opacity;
+                            
                             Color prevOutColor = outputColor[outBufferIndex];
                             Color outColor = new Color();
 

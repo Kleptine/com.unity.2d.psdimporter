@@ -117,8 +117,8 @@ namespace UnityEditor.U2D.PSD
         [SerializeField, ExcludeFromPreset] List<SpriteMetaData> m_LayeredSpriteImportData = new List<SpriteMetaData>();
 
         // If true, the importer will find layers and groups named with "OUT_*" and import them as separate textures.
-        [SerializeField] bool m_separateOutLayers = false;
-        [SerializeField] bool m_importTextureSet = false;
+        [SerializeField] public bool m_separateOutLayers = false;
+        [SerializeField] public bool m_importTextureSet = false;
 
         void ISerializationCallbackReceiver.OnBeforeSerialize() { }
 

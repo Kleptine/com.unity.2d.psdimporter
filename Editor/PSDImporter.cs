@@ -766,6 +766,7 @@ namespace UnityEditor.U2D.PSD
 
             // Use a helper to find all layers and groups that match the prefix
             var layersToExport = FindExportableLayers(m_ExtractData);
+            var layerNames = new HashSet<string>();
 
             foreach (PSDExtractLayerData layerData in layersToExport)
             {
@@ -801,6 +802,18 @@ namespace UnityEditor.U2D.PSD
 
                     if (imageData.IsCreated && imageData.Length > 0)
                     {
+                        string textureName = layerData.bitmapLayer.Name.Replace("OUT_", "").Trim();
+                        if (string.IsNullOrEmpty(textureName))
+                        {
+                            textureName = "Layer";
+                            Debug.LogError("A layer has empty name [OUT_] which is invalid, using default name [OUT_Layer]", this);
+                        }
+                        if (layerNames.Contains(textureName))
+                        {
+                            Debug.LogError($"More than one OUT_ layer with name: [{textureName}]. This is invalid.", this);
+                        }
+                        layerNames.Add(textureName);
+                        
                         // Use a simplified sprite metadata for texture generation
                         SpriteMetaData[] spriteMetaData = { new SpriteMetaData { rect = new Rect(0, 0, width, height) } };
                         
@@ -812,10 +825,7 @@ namespace UnityEditor.U2D.PSD
                         if (texture != null)
                         {
                             // Add the generated texture as a sub-asset
-                            string assetName = layerData.bitmapLayer.Name.Replace("OUT_", "").Trim();
-                            texture.name = assetName;
-                            
-                            Debug.Log(layerData.bitmapLayer.Name + "  " + doc.width + "   " + rect);
+                            texture.name = textureName;
 
                             textureSet.Layers.Add(new TextureSet.Layer()
                             {
@@ -823,7 +833,7 @@ namespace UnityEditor.U2D.PSD
                                 DocumentRect = new Rect(0,0,doc.width, doc.height),
                                 Texture = texture,
                             });
-                            ctx.AddObjectToAsset(assetName, texture, thumbNail);
+                            ctx.AddObjectToAsset(textureName, texture, thumbNail);
                         }
                     }
                 }

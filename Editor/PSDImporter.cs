@@ -33,7 +33,7 @@ namespace UnityEditor.U2D.PSD
     /// ScriptedImporter to import Photoshop files
     /// </summary>
     // Version using unity release + 5 digit padding for future upgrade. Eg 2021.2 -> 21200000
-    [ScriptedImporter(23100003, new string[] { "psb" }, new[] { "psd" }, AllowCaching = true)]
+    [ScriptedImporter(23100004, new string[] { "psb" }, new[] { "psd" }, AllowCaching = true)]
     [HelpURL("https://docs.unity3d.com/Packages/com.unity.2d.psdimporter@latest")]
     [MovedFrom("UnityEditor.Experimental.AssetImporters")]
     public partial class PSDImporter : ScriptedImporter, ISpriteEditorDataProvider
@@ -1674,7 +1674,7 @@ namespace UnityEditor.U2D.PSD
             if (m_SingleSpriteImportData == null || m_SingleSpriteImportData.Count < 1 && m_SingleSpriteImportData[0] != null)
                 spriteMetaData.Copy(m_SingleSpriteImportData[0]);
             if (assetPath != null)
-                spriteMetaData.name = System.IO.Path.GetFileNameWithoutExtension(assetPath) + "_1";
+                spriteMetaData.name = System.IO.Path.GetFileNameWithoutExtension(assetPath);
             if (importData != null)
             {
                 spriteMetaData.rect = new Rect(0, 0, importData.importedTextureWidth, importData.importedTextureHeight);

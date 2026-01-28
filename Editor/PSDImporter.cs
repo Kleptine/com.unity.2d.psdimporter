@@ -925,11 +925,11 @@ namespace UnityEditor.U2D.PSD
                 return;
             }
 
-            // Use a helper to find all layers and groups that match the prefix
+            // Use a helper to find all layers and groups that match the OUT or MASK prefix
             var layersToExport = FindExportableLayers(m_ExtractData);
             var layerNames = new HashSet<string>();
 
-            foreach (PSDExtractLayerData layerData in layersToExport)
+            foreach ((string layerType, PSDExtractLayerData layerData) in layersToExport)
             {
                 NativeArray<Color32> imageData = default;
 
@@ -963,15 +963,47 @@ namespace UnityEditor.U2D.PSD
 
                     if (imageData.IsCreated && imageData.Length > 0)
                     {
-                        string textureName = layerData.bitmapLayer.Name.Replace("OUT_", "").Trim();
-                        if (string.IsNullOrEmpty(textureName))
+                        string textureName;
+                        if (layerType == "OUT")
                         {
-                            textureName = "Layer";
-                            Debug.LogError("A layer has empty name [OUT_] which is invalid, using default name [OUT_Layer]", this);
+                            textureName = layerData.bitmapLayer.Name.Replace($"{layerType}_", "").Trim();
+
+                            if (string.IsNullOrEmpty(textureName))
+                            {
+                                textureName = "Layer";
+                                Debug.LogError(
+                                    $"A layer has empty name [{layerData.bitmapLayer.Name}] which is invalid, using default name [{layerType}_Layer]",
+                                    this);
+                            }
+                            if (layerNames.Contains(textureName))
+                            {
+                                Debug.LogError(
+                                    $"More than one OUT_ layer with name: [{textureName}]. This is invalid. [{ctx.assetPath}]",
+                                    this);
+                            }
+                        } else if (layerType == "MASK")
+                        {
+                            string maskName = layerData.bitmapLayer.Name.Replace($"{layerType}_", "").Trim();
+
+                            if (string.IsNullOrEmpty(maskName))
+                            {
+                                maskName = "Layer";
+                                Debug.LogError(
+                                    $"A layer has empty name [{layerData.bitmapLayer.Name}] which is invalid, using default name [{layerType}_Layer]",
+                                    this);
+                            }
+
+                            textureName = maskName + "_Mask";
+                            if (layerNames.Contains(textureName))
+                            {
+                                Debug.LogError(
+                                    $"More than one export layer with name: [{textureName}]. This is invalid. [{ctx.assetPath}]",
+                                    this);
+                            }
                         }
-                        if (layerNames.Contains(textureName))
+                        else
                         {
-                            Debug.LogError($"More than one OUT_ layer with name: [{textureName}]. This is invalid. [{ctx.assetPath}]", this);
+                            throw new Exception($"Unknown export layer type: {layerType}");
                         }
                         layerNames.Add(textureName);
                         
@@ -979,20 +1011,51 @@ namespace UnityEditor.U2D.PSD
                         SpriteMetaData[] spriteMetaData = { new SpriteMetaData { rect = new Rect(0, 0, width, height) } };
                         
                         // Generate the texture using the existing pipeline
-                        TextureGenerationOutput output = ImportTexture(ctx, imageData, width, height, spriteMetaData);
+                        TextureGenerationOutput output;
+                        if (layerType == "OUT")
+                        {
+                            output = ImportTexture(ctx, imageData, width, height, spriteMetaData);
+                        } else if (layerType == "MASK")
+                        {
+                            TextureImporterPlatformSettings platformSettings = TextureImporterUtilities.GetPlatformTextureSettings(ctx.selectedBuildTarget, in m_PlatformSettings);
+
+                            TextureSettings textureSettings = m_TextureImporterSettings.ExtractTextureSettings();
+                            textureSettings.assetPath = ctx.assetPath;
+                            textureSettings.enablePostProcessor = true;
+                            textureSettings.containsAlpha = true;
+                            textureSettings.hdr = false;
+
+                            TextureAlphaSettings textureAlphaSettings = m_TextureImporterSettings.ExtractTextureAlphaSettings();
+                            TextureMipmapSettings textureMipmapSettings = m_TextureImporterSettings.ExtractTextureMipmapSettings();
+                            TextureCubemapSettings textureCubemapSettings = m_TextureImporterSettings.ExtractTextureCubemapSettings();
+                            TextureWrapSettings textureWrapSettings = m_TextureImporterSettings.ExtractTextureWrapSettings();
+                            output = TextureGeneratorHelper.GenerateTextureSingleChannel(imageData, width, height,
+                                textureSettings, platformSettings, textureAlphaSettings, textureMipmapSettings,
+                                textureCubemapSettings, textureWrapSettings);
+                        }
+                        else
+                        {
+                            throw new Exception("Unknown export layer type: " + layerType);
+                        }
 
                         if (output.texture != null)
                         {
                             // Add the generated texture as a sub-asset
                             output.texture.name = textureName;
 
-                            textureSet.Layers.Add(new TextureSet.Layer()
+                            List<TextureSet.Layer> texList = layerType == "OUT" ? textureSet.Layers : textureSet.Masks;
+
+                            texList.Add(new TextureSet.Layer()
                             {
                                 // DocumentRect = new Rect(rect.X, doc.height - rect.Y - rect.Height, rect.Width, rect.Height),
                                 DocumentRect = new Rect(0,0,doc.width, doc.height),
                                 Texture = output.texture,
                             });
                             ctx.AddObjectToAsset(textureName, output.texture, output.thumbNail);
+                        }
+                        else
+                        {
+                            throw new Exception("Failed to import texture for photoshop layer: " + layerData.bitmapLayer.Name);
                         }
                     }
                 }
@@ -1004,18 +1067,22 @@ namespace UnityEditor.U2D.PSD
             }
         }
 
-        // Helper method to recursively find layers/groups with the "OUT_" prefix
-        private List<PSDExtractLayerData> FindExportableLayers(PSDExtractLayerData[] layers)
+        // Helper method to recursively find layers/groups with the "OUT_" or "MASK_" prefix
+        private List<(string layerType, PSDExtractLayerData layerData)> FindExportableLayers(PSDExtractLayerData[] layers)
         {
-            var exportableLayers = new List<PSDExtractLayerData>();
+            var exportableLayers = new List<(string,PSDExtractLayerData)>();
             if (layers == null)
                 return exportableLayers;
-                
+
             foreach (var layer in layers)
             {
                 if (layer.bitmapLayer.Name.StartsWith("OUT_"))
                 {
-                    exportableLayers.Add(layer);
+                    exportableLayers.Add(("OUT", layer));
+                }
+                else if (layer.bitmapLayer.Name.StartsWith("MASK_"))
+                {
+                    exportableLayers.Add(("MASK", layer));
                 }
                 else if (layer.children != null && layer.children.Length > 0)
                 {

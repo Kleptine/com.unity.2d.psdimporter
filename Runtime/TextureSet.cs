@@ -30,6 +30,9 @@ namespace Unity.Psd
         [FormerlySerializedAs("Textures")]
         public List<Layer> Layers = new();
 
+        /// <summary>Grayscale mask textures imported from MASK_ prefixed layers. Matched to Layers by texture name.</summary>
+        public List<Layer> Masks = new();
+
         /// <summary>
         /// The size of the document, irrespective of the layers (some layers may be smaller, etc).
         /// </summary>

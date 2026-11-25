@@ -17,14 +17,14 @@ namespace UnityEditor.U2D.PSD
             public int4 layerRect;
         }
 
-        public static unsafe void Execute(in PSDExtractLayerData[] layer, ref NativeArray<Color32> output, bool importHiddenLayer, Vector2Int documentSize)
+        public static unsafe void Execute(in IReadOnlyList<PSDExtractLayerData> layer, ref NativeArray<Color32> output, bool importHiddenLayer, Vector2Int documentSize)
         {
             UnityEngine.Profiling.Profiler.BeginSample("FlattenImage");
 
             List<LayerData> layerData = new List<LayerData>();
-            for (int i = layer.Length - 1; i >= 0; --i)
+            for (int i = layer.Count - 1; i >= 0; --i)
             {
-                GetLayerDataToMerge(in layer[i], ref layerData, importHiddenLayer);
+                GetLayerDataToMerge(layer[i], ref layerData, importHiddenLayer);
             }
 
             if (layerData.Count == 0)

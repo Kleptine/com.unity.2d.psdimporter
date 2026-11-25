@@ -6,6 +6,9 @@ using System.Text;
 using PDNWrapper;
 using Unity.Collections;
 using UnityEngine;
+using UnityEditor.AssetImporters;
+using UnityEditor.U2D.Common;
+
 
 #if ENABLE_2D_ANIMATION
 using UnityEditor.U2D.Animation;
@@ -124,7 +127,7 @@ namespace UnityEditor.U2D.PSD
             return path;
         }
 
-        public static void ValidatePSDLayerId(IEnumerable<PSDLayer> oldPsdLayer, IEnumerable<BitmapLayer> layers, UniqueNameGenerator uniqueNameGenerator)
+        public static void ValidatePSDLayerId(IEnumerable<PSDLayer> oldPsdLayer, IEnumerable<BitmapLayer> layers, UniqueNameGenerator uniqueNameGenerator, ScriptedImporter importer)
         {
             // first check if all layers are unique. If not, we use back the previous layer id based on name match
             HashSet<int> uniqueIdSet = new HashSet<int>();
@@ -147,7 +150,7 @@ namespace UnityEditor.U2D.PSD
                 {
                     IEnumerable<PSDLayer> oldLayers = oldPsdLayer.Where(x => x.name == childBitmapLayer.Name);
                     if (oldLayers.Count() == 0)
-                        oldLayers = oldPsdLayer.Where(x => x.layerID == childBitmapLayer.Name.GetHashCode());
+                        oldLayers = oldPsdLayer.Where(x => x.layerID == StableStringHash.Compute(childBitmapLayer.Name));
                     // pick one that is not already on the list
                     foreach (PSDLayer ol in oldLayers)
                     {
@@ -166,14 +169,14 @@ namespace UnityEditor.U2D.PSD
                     layerName = uniqueNameGenerator.GetUniqueName(layerName);
                     if (layerName != childBitmapLayer.Name)
                         importWarning += "\nLayer names are not unique. Please ensure they are unique to for SpriteRect to be mapped back correctly.";
-                    childBitmapLayer.LayerID = layerName.GetHashCode();
-                    Debug.LogWarning(importWarning);
+                    childBitmapLayer.LayerID = StableStringHash.Compute(layerName);
+                    Debug.LogWarning(importWarning, importer);
                 }
                 else
                     uniqueNameGenerator.AddHash(childBitmapLayer.LayerID);
                 if (childBitmapLayer.ChildLayer != null)
                 {
-                    ValidatePSDLayerId(oldPsdLayer, childBitmapLayer.ChildLayer, uniqueNameGenerator);
+                    ValidatePSDLayerId(oldPsdLayer, childBitmapLayer.ChildLayer, uniqueNameGenerator, importer);
                 }
             }
         }
@@ -240,14 +243,14 @@ namespace UnityEditor.U2D.PSD
             return Vector2.zero;
         }
 
-        public static string GetUniqueSpriteName(string name, UniqueNameGenerator generator, bool keepDupilcateSpriteName)
+        public static string GetUniqueSpriteName(string name, UniqueNameGenerator generator, bool keepDuplicateSpriteName)
         {
-            if (keepDupilcateSpriteName)
+            if (keepDuplicateSpriteName)
                 return name;
             return generator.GetUniqueName(name);
         }
 
-        public static bool VisibleInHierarchy(List<PSDLayer> psdGroup, int index)
+        public static bool VisibleInHierarchy(IReadOnlyList<PSDLayer> psdGroup, int index)
         {
             PSDLayer psdLayer = psdGroup[index];
             bool parentVisible = true;
@@ -256,13 +259,19 @@ namespace UnityEditor.U2D.PSD
             return parentVisible && psdLayer.isVisible;
         }
 
-        public static bool IsSpriteMetaDataDefault(SpriteMetaData metaData)
+        public static IPSDLayerMappingStrategy GetLayerMappingStrategy(PSDImporter.ELayerMappingOption option)
         {
-            return metaData.spriteID == default ||
-                   metaData.rect == Rect.zero;
+            switch (option)
+            {
+                case PSDImporter.ELayerMappingOption.UseLayerId: return new LayerMappingUserLayerID();
+                case PSDImporter.ELayerMappingOption.UseLayerName: return new LayerMappingUseLayerName();
+                case PSDImporter.ELayerMappingOption.UseLayerNameCaseSensitive: return new LayerMappingUseLayerNameCaseSensitive();
+                default:
+                    return new LayerMappingUserLayerID();
+            }
         }
 
-#if ENABLE_2D_ANIMATION        
+#if ENABLE_2D_ANIMATION
         public static bool SpriteIsMainFromSpriteLib(List<SpriteCategory> categories, string spriteId, out string categoryName)
         {
             categoryName = "";

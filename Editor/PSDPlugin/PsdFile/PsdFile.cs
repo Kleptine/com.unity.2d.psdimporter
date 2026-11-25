@@ -31,7 +31,7 @@ namespace PhotoshopFile
         Header = 1,
         ColorMode = Header | 1 << 2,
         ImageData = ColorMode | 1 << 3,
-        All = Header | ColorMode | ImageData
+        All = Header | ColorMode | ImageData,
     }
 
 
@@ -56,8 +56,6 @@ namespace PhotoshopFile
     internal class PsdFile
     {
         #region Constructors
-
-        ELoadFlag m_LoadFlag;
 
         public PsdFile(PsdFileVersion version = PsdFileVersion.Psd)
         {

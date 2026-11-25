@@ -1,5 +1,7 @@
-using System.Collections;
+using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.Text;
 using PDNWrapper;
 using UnityEngine;
 
@@ -28,6 +30,8 @@ namespace UnityEditor.U2D.PSD
         bool Compare(IPSDLayerMappingStrategyComparable a, IPSDLayerMappingStrategyComparable b);
         bool Compare(IPSDLayerMappingStrategyComparable a, BitmapLayer b);
         string LayersUnique(IEnumerable<IPSDLayerMappingStrategyComparable> layers);
+        GUID GenerateGUID(IPSDLayerMappingStrategyComparable layer);
+        GUID GenerateGUID(BitmapLayer layer);
     }
 
     internal abstract class LayerMappingStrategy<T> : IPSDLayerMappingStrategy
@@ -63,6 +67,9 @@ namespace UnityEditor.U2D.PSD
             return LayersUnique(layers, layerNameHash, layerGroupHash);
         }
 
+        public abstract GUID GenerateGUID(IPSDLayerMappingStrategyComparable layer);
+        public abstract GUID GenerateGUID(BitmapLayer layer);
+
         string LayersUnique(IEnumerable<IPSDLayerMappingStrategyComparable> layers, HashSet<T> layerNameHash, HashSet<T> layerGroupHash)
         {
             List<string> duplicateLayerName = new List<string>();
@@ -90,25 +97,61 @@ namespace UnityEditor.U2D.PSD
     {
         protected override string GetID(IPSDLayerMappingStrategyComparable x)
         {
-            return x.name.ToLower();
+            return $"{x.name.ToLower()} {x.isGroup}";
         }
 
         protected override string GetID(BitmapLayer x)
         {
-            return x.Name.ToLower();
+            return $"{x.Name.ToLower()} {x.IsGroup}";
         }
+
+        public override GUID GenerateGUID(IPSDLayerMappingStrategyComparable layer)
+        {
+            return StringToGUID(GetID(layer));
+        }
+
+        public override GUID GenerateGUID(BitmapLayer layer)
+        {
+            return StringToGUID(GetID(layer));
+        }
+
+        public static GUID StringToGUID(string input)
+        {
+            byte[] hashBytes = MD5.Create().ComputeHash(Encoding.UTF8.GetBytes(input));
+
+            // Set version to 3 (MD5 hash-based UUID)
+            hashBytes[6] = (byte)((hashBytes[6] & 0x0f) | 0x30);
+
+            // Set variant to RFC 4122
+            hashBytes[8] = (byte)((hashBytes[8] & 0x3f) | 0x80);
+
+            string hexString = BitConverter.ToString(hashBytes).Replace("-", "");
+            return new GUID(hexString);
+
+        }
+
     }
 
     internal class LayerMappingUseLayerNameCaseSensitive : LayerMappingStrategy<string>
     {
         protected override string GetID(IPSDLayerMappingStrategyComparable x)
         {
-            return x.name;
+            return $"{x.name} {x.isGroup}";
         }
 
         protected override string GetID(BitmapLayer x)
         {
-            return x.Name;
+            return $"{x.Name} {x.IsGroup}";
+        }
+
+        public override GUID GenerateGUID(IPSDLayerMappingStrategyComparable layer)
+        {
+            return LayerMappingUseLayerName.StringToGUID(GetID(layer));
+        }
+
+        public override GUID GenerateGUID(BitmapLayer layer)
+        {
+            return LayerMappingUseLayerName.StringToGUID(GetID(layer));
         }
     }
 
@@ -123,6 +166,24 @@ namespace UnityEditor.U2D.PSD
         {
             return x.LayerID;
         }
+
+        public override GUID GenerateGUID(IPSDLayerMappingStrategyComparable layer)
+        {
+            return GenerateGUID(layer.layerID);
+        }
+
+        static GUID GenerateGUID(int i)
+        {
+            if (i >= 0)
+                ++i;
+            GUID guid = new GUID((uint)i, 0, 0, 0);
+
+            return guid;
+        }
+
+        public override GUID GenerateGUID(BitmapLayer layer)
+        {
+            return GenerateGUID(layer.LayerID);
+        }
     }
 }
-

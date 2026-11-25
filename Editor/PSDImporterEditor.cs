@@ -7,11 +7,13 @@ using System.Collections.Generic;
 using System.IO;
 using PhotoshopFile;
 using UnityEditor.AssetImporters;
+using UnityEditor.Presets;
 using UnityEditor.U2D.Common;
 using UnityEditor.U2D.Sprites;
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
 using UnityEngine.UIElements;
+using Unity.Scripting.LifecycleManagement;
 
 #if ENABLE_2D_ANIMATION
 using UnityEngine.U2D.Animation;
@@ -73,17 +75,15 @@ namespace UnityEditor.U2D.PSD
         SerializedProperty m_ConvertToNormalMap;
         SerializedProperty m_MosaicLayers;
         SerializedProperty m_ImportHiddenLayers;
-        SerializedProperty m_ResliceFromLayer;
         SerializedProperty m_CharacterMode;
         SerializedProperty m_DocumentPivot;
         SerializedProperty m_DocumentAlignment;
         SerializedProperty m_GenerateGOHierarchy;
-        SerializedProperty m_KeepDupilcateSpriteName;
+        SerializedProperty m_KeepDuplicateSpriteName;
         SerializedProperty m_GeneratePhysicsShape;
         SerializedProperty m_LayerMappingOption;
         SerializedProperty m_Padding;
         SerializedProperty m_SpriteSizeExpand;
-        SerializedProperty m_SpriteSizeExpandChanged;
 
 #if ENABLE_2D_TILEMAP_EDITOR
         SerializedProperty m_GenerateTileAssets;
@@ -100,8 +100,6 @@ namespace UnityEditor.U2D.PSD
         SerializedProperty m_PaperDollMode;
         SerializedProperty m_SkeletonAssetReferenceID;
 #endif
-
-        uint m_SpriteSizePreviousSize;
 
         readonly int[] m_FilterModeOptions = (int[])(Enum.GetValues(typeof(FilterMode)));
         static readonly int s_SwizzleFieldHash = "SwizzleField".GetHashCode();
@@ -124,6 +122,7 @@ namespace UnityEditor.U2D.PSD
         IMGUIContainer m_ApplyRevertGUIVisualElement;
         VisualElement m_InspectorSettingsView;
         VisualElement m_MultiSupportForLayerManagementNotSupported;
+        VisualElement m_PresetLayerManagementNotSupported;
         VisualElement m_RootVisualElement;
         IMGUIContainer m_ToolbarContainer;
         ScrollView m_InspectorScrollView;
@@ -143,18 +142,15 @@ namespace UnityEditor.U2D.PSD
             base.OnEnable();
             m_MosaicLayers = serializedObject.FindProperty("m_MosaicLayers");
             m_ImportHiddenLayers = serializedObject.FindProperty("m_ImportHiddenLayers");
-            m_ResliceFromLayer = serializedObject.FindProperty("m_ResliceFromLayer");
             m_CharacterMode = serializedObject.FindProperty("m_CharacterMode");
             m_DocumentPivot = serializedObject.FindProperty("m_DocumentPivot");
             m_DocumentAlignment = serializedObject.FindProperty("m_DocumentAlignment");
             m_GenerateGOHierarchy = serializedObject.FindProperty("m_GenerateGOHierarchy");
-            m_KeepDupilcateSpriteName = serializedObject.FindProperty("m_KeepDupilcateSpriteName");
+            m_KeepDuplicateSpriteName = serializedObject.FindProperty("m_KeepDuplicateSpriteName");
             m_GeneratePhysicsShape = serializedObject.FindProperty("m_GeneratePhysicsShape");
             m_LayerMappingOption = serializedObject.FindProperty("m_LayerMappingOption");
             m_Padding = serializedObject.FindProperty("m_Padding");
             m_SpriteSizeExpand = serializedObject.FindProperty("m_SpriteSizeExpand");
-            m_SpriteSizePreviousSize = m_SpriteSizeExpand.uintValue;
-            m_SpriteSizeExpandChanged = serializedObject.FindProperty("m_SpriteSizeExpandChanged");
             m_Pipeline = serializedObject.FindProperty("m_Pipeline");
 
             SerializedProperty textureImporterSettingsSP = serializedObject.FindProperty("m_TextureImporterSettings");
@@ -303,28 +299,39 @@ namespace UnityEditor.U2D.PSD
 
         void OnLayerManagementViewActivated()
         {
-            if (serializedObject.isEditingMultipleObjects)
+            bool editingMultipleObjects = serializedObject.isEditingMultipleObjects;
+
+            // A Preset carries no layer records, see [ExcludeFromPreset] in PSDImporter
+            bool editingPreset = !editingMultipleObjects && Preset.IsEditorTargetAPreset(target);
+
+            m_MultiSupportForLayerManagementNotSupported.SetHiddenFromLayout(!editingMultipleObjects);
+            m_PresetLayerManagementNotSupported.SetHiddenFromLayout(!editingPreset);
+            m_LayerManagementTreeView.SetHiddenFromLayout(editingMultipleObjects || editingPreset);
+
+            // Include Hidden Layers is shared by Presets, so this block stays for them
+            m_LayerManagementSettingsContainer.SetHiddenFromLayout(editingMultipleObjects);
+        }
+
+        static HelpBox CreateLayerManagementNotice(string name, string text)
+        {
+            return new HelpBox(text, HelpBoxMessageType.Info)
             {
-                m_MultiSupportForLayerManagementNotSupported.SetHiddenFromLayout(false);
-                m_LayerManagementTreeView.SetHiddenFromLayout(true);
-                m_LayerManagementSettingsContainer.SetHiddenFromLayout(true);
-            }
-            else
-            {
-                m_MultiSupportForLayerManagementNotSupported.SetHiddenFromLayout(true);
-                m_LayerManagementTreeView.SetHiddenFromLayout(false);
-                m_LayerManagementSettingsContainer.SetHiddenFromLayout(false);
-            }
+                name = name,
+                style =
+                {
+                    marginTop = 4,
+                    marginBottom = 4,
+                    marginLeft = 4,
+                    marginRight = 4
+                }
+            };
         }
 
         VisualElement CreateLayerManagementUI()
         {
             VisualElement ve = new VisualElement();
-            m_MultiSupportForLayerManagementNotSupported = new Label()
-            {
-                name = "MultiSupportForLayerManagementNotSupported",
-                text = styles.multiEditLayerManagementNotSupported.text
-            };
+            m_MultiSupportForLayerManagementNotSupported = CreateLayerManagementNotice("MultiSupportForLayerManagementNotSupported", styles.multiEditLayerManagementNotSupported.text);
+            m_PresetLayerManagementNotSupported = CreateLayerManagementNotice("PresetLayerManagementNotSupported", styles.presetLayerManagementNotSupported.text);
             m_LayerManagementSettingsContainer = new IMGUIContainer(DoLayerManagementUI)
             {
                 name = "LayerManagementSettings",
@@ -353,6 +360,7 @@ namespace UnityEditor.U2D.PSD
             m_ApplyRevertGUIVisualElement.RegisterCallback<GeometryChangedEvent>(OnUpdateLayerTreeViewHeight);
             ve.Add(m_MultiSupportForLayerManagementNotSupported);
             ve.Add(m_LayerManagementSettingsContainer);
+            ve.Add(m_PresetLayerManagementNotSupported);
             ve.Add(m_LayerManagementTreeView);
             ve.Add(m_ApplyRevertGUIVisualElement);
             return ve;
@@ -607,27 +615,14 @@ namespace UnityEditor.U2D.PSD
         /// </summary>
         protected override void Apply()
         {
-            // Send analytics first while the SerializedObject is still valid
-            FileStream fileStream = new FileStream(((AssetImporter)target).assetPath, FileMode.Open, FileAccess.Read);
-            PsdFile doc = PaintDotNet.Data.PhotoshopFileType.PsdLoad.Load(fileStream, ELoadFlag.Header | ELoadFlag.ColorMode);
-
-            PSDApplyEvent evt = new PSDApplyEvent()
-            {
-                instance_id = target.GetInstanceID(),
-                texture_type = m_TextureType.intValue,
-                sprite_mode = m_SpriteMode.intValue,
-                mosaic_layer = m_MosaicLayers.boolValue,
-                import_hidden_layer = m_ImportHiddenLayers.boolValue,
-                character_mode = m_CharacterMode.boolValue,
-                generate_go_hierarchy = m_GenerateGOHierarchy.boolValue,
-                reslice_from_layer = m_ResliceFromLayer.boolValue,
-                is_character_rigged = IsCharacterRigged(),
-                is_psd = IsPSD(doc),
-                color_mode = FileColorMode(doc)
-            };
-            doc.Cleanup();
-            AnalyticFactory.analytics.SendApplyEvent(evt);
             InternalEditorBridge.ApplySpriteEditorWindow();
+            // Import never writes to the importer, so record the last import into the .meta this Apply writes.
+            foreach (UnityEngine.Object t in targets)
+            {
+                PSDImporter importer = (PSDImporter)t;
+                importer.RecordLastImport();
+                EditorUtility.SetDirty(importer);
+            }
             base.Apply();
             PSDImportPostProcessor.currentApplyAssetPath = ((PSDImporter)target).assetPath;
             if (m_PreviewRenderUtility != null)
@@ -955,11 +950,6 @@ namespace UnityEditor.U2D.PSD
                 }
             }
             EditorGUILayout.PropertyField(m_GeneratePhysicsShape, styles.generatePhysicsShape);
-            EditorGUILayout.PropertyField(m_ResliceFromLayer, styles.resliceFromLayer);
-            if (m_ResliceFromLayer.boolValue)
-            {
-                EditorGUILayout.HelpBox(styles.resliceFromLayerWarning.text, MessageType.Info, true);
-            }
 
             DoOpenSpriteEditorButton();
         }
@@ -974,7 +964,7 @@ namespace UnityEditor.U2D.PSD
                 {
                     using (new EditorGUI.DisabledScope(m_MosaicLayers.boolValue == false))
                     {
-                        EditorGUILayout.PropertyField(m_KeepDupilcateSpriteName, styles.keepDuplicateSpriteName);
+                        EditorGUILayout.PropertyField(m_KeepDuplicateSpriteName, styles.keepDuplicateSpriteName);
 
                         using (new EditorGUI.DisabledScope(!m_MosaicLayers.boolValue || !m_CharacterMode.boolValue))
                         {
@@ -1138,19 +1128,20 @@ namespace UnityEditor.U2D.PSD
         /// </summary>
         public override void SaveChanges()
         {
-            if (m_SpriteSizePreviousSize != m_SpriteSizeExpand.uintValue)
+            // Defers the Sprite Editor's reimport in Apply() so it cannot destroy this editor mid-save.
+            AssetDatabase.StartAssetEditing();
+            try
             {
-                m_SpriteSizeExpandChanged.boolValue = true;
+                ApplyTexturePlatformSettings();
+
                 serializedObject.ApplyModifiedProperties();
                 extraDataSerializedObject.ApplyModifiedProperties();
-                m_SpriteSizePreviousSize = m_SpriteSizeExpand.uintValue;
+                base.SaveChanges();
             }
-
-            ApplyTexturePlatformSettings();
-
-            serializedObject.ApplyModifiedProperties();
-            extraDataSerializedObject.ApplyModifiedProperties();
-            base.SaveChanges();
+            finally
+            {
+                AssetDatabase.StopAssetEditing();
+            }
         }
 
         void ApplyTexturePlatformSettings()
@@ -1760,7 +1751,6 @@ namespace UnityEditor.U2D.PSD
             public readonly GUIContent applyButtonLabel = new GUIContent("Apply");
             public readonly GUIContent cancelButtonLabel = new GUIContent("Cancel");
             public readonly GUIContent spriteEditorButtonLabel = new GUIContent("Open Sprite Editor");
-            public readonly GUIContent resliceFromLayerWarning = new GUIContent("This will reinitialize and recreate all Sprites based on the file’s layer data. Existing Sprite metadata from previously generated Sprites are copied over.");
             public readonly GUIContent alphaIsTransparency = new GUIContent("Alpha Is Transparency", "If the provided alpha channel is transparency, enable this to pre-filter the color to avoid texture filtering artifacts. This is not supported for HDR textures.");
 
             public readonly GUIContent advancedHeaderText = new GUIContent("Advanced", "Show advanced settings.");
@@ -1797,7 +1787,6 @@ namespace UnityEditor.U2D.PSD
             public readonly GUIContent mosaicLayers = EditorGUIUtility.TrTextContent("Import Mode", "Layers will be imported as individual Sprites.");
             public readonly GUIContent characterMode = EditorGUIUtility.TrTextContent("Use as Rig", "Enable to support 2D Animation character rigging.");
             public readonly GUIContent layerGroupLabel = EditorGUIUtility.TrTextContent("Use Layer Group", "GameObjects are grouped according to source file layer grouping.");
-            public readonly GUIContent resliceFromLayer = EditorGUIUtility.TrTextContent("Automatic Reslice", "Recreate Sprite rects from file.");
             public readonly GUIContent paperDollMode = EditorGUIUtility.TrTextContent("Paper Doll Mode", "Special mode to generate a Prefab for Paper Doll use case.");
             public readonly GUIContent keepDuplicateSpriteName = EditorGUIUtility.TrTextContent("Keep Duplicate Names", "Keep Sprite name same as Layer Name even if there are duplicated Layer Name.");
             public readonly GUIContent mainSkeletonName = EditorGUIUtility.TrTextContent("Main Skeleton", "Main Skeleton to use for Rigging.");
@@ -1805,6 +1794,7 @@ namespace UnityEditor.U2D.PSD
             public readonly GUIContent layerImportHeaderText = EditorGUIUtility.TrTextContent("Layer Import", "Layer Import settings.");
             public readonly GUIContent textureHeaderText = EditorGUIUtility.TrTextContent("Texture", "Texture settings.");
             public readonly GUIContent multiEditLayerManagementNotSupported = EditorGUIUtility.TrTextContent("Multi editing in Layer Management is not supported.", "");
+            public readonly GUIContent presetLayerManagementNotSupported = EditorGUIUtility.TrTextContent("Layer Import Settings cannot be edited in a Preset. They belong to the file they were imported from and are not saved in a Preset.", "");
             public readonly GUIContent characterRigHeaderText = EditorGUIUtility.TrTextContent("Character Rig", "Character Rig settings.");
 
             public readonly GUIContent tilePaletteHeaderText = EditorGUIUtility.TrTextContent("Tile Palette", "Tile Palette settings.");
@@ -1880,6 +1870,7 @@ namespace UnityEditor.U2D.PSD
             }
         }
 
+        [NoAutoStaticsCleanup]
         static Styles m_Styles;
 
         internal static Styles styles

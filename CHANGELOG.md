@@ -1,5 +1,80 @@
 # Changelog
 
+
+## [17.0.1] - 2026-11-17
+### Changed
+- The PSD Importer no longer writes to the .meta file of a .psb or .psd file while importing it. The layers it pairs Sprite IDs with are recorded when you apply changes in the Inspector or the Sprite Editor.
+- In Individual Sprites (Mosaic) mode, applying any change to a .psb or .psd file removes the Sprite rects and names edited in an earlier version from its .meta file, which the importer no longer uses, and stops the warning about them.
+- In Individual Sprites (Mosaic) mode, `ISpriteEditorDataProvider.SetSpriteRects` takes only the alignment, pivot and border of existing Sprites. It ignores name and rect changes and added rects, which the importer generates from the layers.
+- PSD Importer Presets no longer save or apply data that belongs to the source file, such as Sprite rects, layers, rig data and Sprite Library categories.
+- Applying changes to a .psb or .psd file imported by an early PSD Importer version moves the identifiers of its texture, prefab, Sprite Library Asset and skeleton asset into the internal ID table of its .meta file. The IDs of the imported objects do not change.
+
+### Fixed
+- Reimporting a .psb or .psd file could log that the importer generated an inconsistent result, because the import depended on the previous import.
+- Setting `PSDImporter.mipmapFadeDistanceStart` no longer overwrites `PSDImporter.mipmapFadeDistanceEnd`. (UUM-161204)
+- Applying in the Skinning Editor no longer drops the bones of Sprites whose layers are hidden or unchecked. (UUM-161627)
+
+## [17.0.0] - 2026-11-06
+### Added
+- `PSDImporter.mosaicPadding`, which replaces the misspelled `PSDImporter.mosiacPadding`. (D2D-8325)
+
+### Deprecated
+- `PSDImporter.mosiacPadding` is deprecated and will be removed in a future release. Use `PSDImporter.mosaicPadding` instead. The API Updater offers to rewrite existing scripts automatically. (D2D-8325)
+
+### Fixed
+- Fixed compiler warnings CS0414 and CS8524 in PSDImporter.cs being logged to the Console when creating a project from the Universal 2D template. (UUM-154768)
+- Fixed an error being logged to the Console when applying PSD Importer settings in the Inspector while the Sprite Editor has unapplied changes for the same asset. (UUM-154708)
+
+### Changed
+- Move string to hashcode to common package.
+- Pin hosted package documentation links to com.unity.2d.psdimporter@17.0 and align Unity Manual and Script Reference links to Unity 7000.0.
+- The PSD Importer no longer stores a Sprite ID in each layer import setting. The `spriteId` entries under `pSDLayerImportSetting` are removed from the .meta file the next time it is written.
+- The "Keep Duplicate Names" setting is now saved in .psd/.psb .meta files as `keepDuplicateSpriteName` instead of the misspelled `keepDupilcateSpriteName`. Existing values are read from the old key. (D2D-8420)
+
+### Removed
+- Removed the sprite and layer data fields deprecated in 9.0.0, and their automatic migration. Open projects last saved in Unity 2022.3 in Unity 6000.x before you upgrade. (D2D-8379)
+- Removed the **Automatic Reslice** option. In **Individual Sprites (Mosaic)** mode, the PSD Importer now always generates Sprite rects and names from the layers of the source file, and discards rects and names that were edited while the option was disabled. (D2D-8424)
+
+## [16.0.0] - 2026-09-02
+### Changed
+- Internal refactor to isolate code that does meta writing.
+
+### Fixed
+- Fix Custom Outline and Custom Physics Outline not being saved when Sprite Mode is set to Single or Polygon. (UUM-150014)
+- Fixed layers with duplicated names losing their Sprite ID and Sprite rect when Layer Mapping is set to Use Layer Name. (UUM-150011)
+
+## [15.0.0] - 2026-05-19
+### Fixed
+- Package Manager Samples section title now displays "PSD Importer" consistently. (UUM-135396)
+
+### Changed
+- Pin hosted package documentation links to com.unity.2d.psdimporter@15.0 and align Unity Manual and Script Reference links to Unity 6000.6.
+
+## [14.0.2] - 2026-02-17
+
+## [14.0.1] - 2026-02-10
+### Changed
+- Remove automatically added tangents from vertex attributes of sprites with bones.
+
+## [14.0.0] - 2026-01-20
+### Changed
+- Update Unity min version for package.
+
+## [13.0.1] - 2025-10-30
+### Fixed
+- Fix null reference exception occurs when importing psd without visible layers. (DANB-1155)
+- Correct layer mask position relative to its layer. (DANB-1177)
+
+## [13.0.0] - 2025-09-30
+### Changed
+- Update Unity min version for package.
+- Exclude empty layers from import.
+
+## [12.0.0] - 2025-07-17
+### Changed
+- Update minimum Unity version.
+- Highlight a PSD file when clicking the console log about layer ID duplication.
+
 ## [11.0.1] - 2025-06-04
 ### Fixed
 - Replaced deprecated non-generic IMGUI TreeViewItem. (Case DANB-1004)
@@ -10,6 +85,7 @@
 - Update minimum Unity version.
 
 ### Fixed
+- Fixed case Layer Separation toggle icon is invisible when the icon state is "separated" with mousedown. (Case DANB-949)
 - Fixed case Layer Merging and Separation toggle icon is obscured in the Layer Management Panel of the PSD Importer (Case DANB-889)
 - Fixed case the Include Hidden Layers option in the PSD Importer's Layer Management Panel is not being toggled reliably (Case DANB-888)
 - Fixed a typo in settings. (Case DANB-891)

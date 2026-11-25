@@ -5,6 +5,16 @@ using UnityEngine;
 
 namespace UnityEditor.U2D.PSD
 {
+    // This is to provide a readonly data without modifilying the original code that wil affect serialization.
+    interface IPSDLayerImportSettingRecord : IPSDLayerMappingStrategyComparable
+    {
+        string Name { get; }
+        int LayerId { get; }
+        bool Flatten { get; }
+        bool IsGroup { get; }
+        bool ImportLayer { get; }
+    }
+
     /// <summary>
     /// Custom hidden asset to store meta information of the last import state
     /// </summary>
@@ -59,6 +69,15 @@ namespace UnityEditor.U2D.PSD
         }
 
         [SerializeField]
+        PSDImporter.ELayerMappingOption m_MappingOption = PSDImporter.ELayerMappingOption.Unknown;
+
+        public PSDImporter.ELayerMappingOption mappingOption
+        {
+            get => m_MappingOption;
+            private set => m_MappingOption = value;
+        }
+
+        [SerializeField]
         PSDLayerData[] m_PsdLayerData;
         public PSDLayerData[] psdLayerData => m_PsdLayerData;
 
@@ -70,6 +89,66 @@ namespace UnityEditor.U2D.PSD
                 CreatePSDLayerData(fileLayer, layerData);
             }
             m_PsdLayerData = layerData.ToArray();
+        }
+
+        // A matching layer inherits the Sprite ID recorded on the importer, which changes only when the user applies.
+        public void MapLayerToPreviousImport(PSDImporter.ELayerMappingOption layerMappingOption, IReadOnlyList<PSDLayer> previousPSDLayer)
+        {
+            mappingOption = layerMappingOption;
+            if (mappingOption == PSDImporter.ELayerMappingOption.Unknown)
+            {
+                // determine the best mapping option.
+                // if layer id is unique, we use UseLayerId
+                // else use UseLayerNameCaseSensitive
+                IPSDLayerMappingStrategy useIdStrategy = ImportUtilities.GetLayerMappingStrategy(PSDImporter.ELayerMappingOption.UseLayerId);
+                if (string.IsNullOrEmpty(useIdStrategy.LayersUnique(m_PsdLayerData)))
+                    mappingOption = PSDImporter.ELayerMappingOption.UseLayerId;
+                else
+                    mappingOption = PSDImporter.ELayerMappingOption.UseLayerNameCaseSensitive;
+
+            }
+
+            this.mappingOption = mappingOption;
+            IPSDLayerMappingStrategy mappingStrategy = ImportUtilities.GetLayerMappingStrategy(mappingOption);
+            // Layers sharing an identifier, e.g. duplicated layer names, pair one to one with the
+            // previous import in document order so that each layer keeps its own Sprite ID. Generated
+            // IDs stay deterministic but are salted by document order so they never collide.
+            HashSet<PSDLayer> mappedPreviousLayers = new HashSet<PSDLayer>();
+            HashSet<GUID> assignedSpriteIds = new HashSet<GUID>();
+            foreach (PSDLayerData layer in m_PsdLayerData)
+            {
+                GUID spriteId;
+                int index = previousPSDLayer.FindIndex(x => !mappedPreviousLayers.Contains(x) && mappingStrategy.Compare(x, layer));
+                if (index >= 0)
+                {
+                    mappedPreviousLayers.Add(previousPSDLayer[index]);
+                    spriteId = previousPSDLayer[index].spriteID;
+                }
+                else
+                {
+                    spriteId = mappingStrategy.GenerateGUID(layer);
+                    while (assignedSpriteIds.Contains(spriteId))
+                        spriteId = LayerMappingUseLayerName.StringToGUID(spriteId.ToString());
+                }
+                assignedSpriteIds.Add(spriteId);
+                layer.spriteID = spriteId;
+            }
+        }
+
+        // Packing trims the layers by their pixels, so only the import knows the placement and the generated name.
+        public void SetImportedLayers(IReadOnlyList<PSDLayer> importedLayers)
+        {
+            Dictionary<GUID, PSDLayer> importedBySpriteId = new Dictionary<GUID, PSDLayer>(importedLayers.Count);
+            foreach (PSDLayer imported in importedLayers)
+            {
+                importedBySpriteId.TryAdd(imported.spriteID, imported);
+            }
+
+            foreach (PSDLayerData layer in m_PsdLayerData)
+            {
+                if (importedBySpriteId.TryGetValue(layer.spriteID, out PSDLayer imported))
+                    PSDLayer.CopyImportResult(imported, layer);
+            }
         }
 
         void CreatePSDLayerData(BitmapLayer layer, List<PSDLayerData> layerData, int parentIndex = -1)
@@ -89,6 +168,27 @@ namespace UnityEditor.U2D.PSD
                 CreatePSDLayerData(fileLayer, layerData, parentIndex);
             }
         }
+
+        [SerializeField]
+        SpriteMetaData[] m_SpriteRects = Array.Empty<SpriteMetaData>();
+
+        public IReadOnlyList<SpriteMetaData> spriteRects
+        {
+            get => m_SpriteRects;
+            set
+            {
+                m_SpriteRects = new SpriteMetaData[value.Count];
+                for (int i = 0; i < m_SpriteRects.Length; ++i)
+                    m_SpriteRects[i] = value[i];
+                m_SpriteRectsGenerated = true;
+            }
+        }
+
+        // Tells an import that generated no Sprites from an import that has not generated them yet. Artifacts
+        // cached before this field existed count once they have Sprites.
+        [SerializeField]
+        bool m_SpriteRectsGenerated;
+        public bool spriteRectsGenerated => m_SpriteRectsGenerated || m_SpriteRects.Length > 0;
     }
 
     // Struct to keep track of GOs and bone
@@ -102,40 +202,32 @@ namespace UnityEditor.U2D.PSD
     /// Capture per layer import settings
     /// </summary>
     [Serializable]
-    class PSDLayerImportSetting : IPSDLayerMappingStrategyComparable
+    class PSDLayerImportSetting : IPSDLayerImportSettingRecord
     {
-        [SerializeField]
-        string m_SpriteId;
-        GUID m_SpriteIDGUID;
-
         public string name;
         public int layerId;
         public bool flatten;
         public bool isGroup;
         public bool importLayer;
-
         public int layerID => layerId;
         string IPSDLayerMappingStrategyComparable.name => name;
         bool IPSDLayerMappingStrategyComparable.isGroup => isGroup;
 
-        public GUID spriteId
+        public string Name => name;
+        public int LayerId => layerId;
+        public bool Flatten => flatten;
+        public bool IsGroup => isGroup;
+        public bool ImportLayer => importLayer;
+
+        public PSDLayerImportSetting() { }
+
+        public PSDLayerImportSetting(IPSDLayerImportSettingRecord record)
         {
-            get
-            {
-                if (string.IsNullOrEmpty(m_SpriteId))
-                {
-                    m_SpriteIDGUID = GUID.Generate();
-                    m_SpriteId = m_SpriteIDGUID.ToString();
-                }
-
-                return m_SpriteIDGUID;
-
-            }
-            set
-            {
-                m_SpriteIDGUID = value;
-                m_SpriteId = m_SpriteIDGUID.ToString();
-            }
+            name = record.Name;
+            layerId = record.LayerId;
+            flatten = record.Flatten;
+            isGroup = record.IsGroup;
+            importLayer = record.ImportLayer;
         }
     }
 
@@ -143,7 +235,7 @@ namespace UnityEditor.U2D.PSD
     /// PSDLayer data for PSDImportData for last import state
     /// </summary>
     [Serializable]
-    class PSDLayerData : IPSDLayerMappingStrategyComparable
+    class PSDLayerData : IPSDLayerMappingStrategyComparable, IPSDLayerImportResult
     {
         [SerializeField]
         string m_Name;
@@ -194,6 +286,30 @@ namespace UnityEditor.U2D.PSD
         }
 
         [SerializeField]
+        bool m_Flatten;
+        public bool flatten
+        {
+            get => m_Flatten;
+            set => m_Flatten = value;
+        }
+
+        [SerializeField]
+        Vector2Int m_MosaicPosition;
+        public Vector2Int mosaicPosition
+        {
+            get => m_MosaicPosition;
+            set => m_MosaicPosition = value;
+        }
+
+        [SerializeField]
+        string m_SpriteName;
+        public string spriteName
+        {
+            get => m_SpriteName;
+            set => m_SpriteName = value;
+        }
+
+        [SerializeField]
         Vector2Int m_LayerSizeOnFile;
         public Vector2Int layerSizeOnFile
         {
@@ -201,8 +317,16 @@ namespace UnityEditor.U2D.PSD
             set => m_LayerSizeOnFile = value;
         }
 
+        // This is to store the spriteid that was assigned to this layer.
+        [SerializeField]
+        GUID m_SpriteID;
+        public GUID spriteID
+        {
+            get => m_SpriteID;
+            set => m_SpriteID = value;
+        }
+        public bool IsEmpty => !(layerSizeOnFile.x > 0 && layerSizeOnFile.y > 0);
     }
-
 
     /// <summary>
     /// Data for extracting layers and colors from PSD
@@ -211,6 +335,7 @@ namespace UnityEditor.U2D.PSD
     {
         public BitmapLayer bitmapLayer;
         public PSDLayerImportSetting importSetting;
+        public GUID spriteId;
         public PSDExtractLayerData[] children;
     }
 }
